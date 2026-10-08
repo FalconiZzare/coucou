@@ -190,8 +190,8 @@ struct OverviewView: View {
         case "integration_claude":
             if ClaudeHost.activate(task.hostApp) { return }
             let vscodeBundleId = "com.microsoft.VSCode"
-            if let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId }) {
-                app.activate(options: .activateIgnoringOtherApps)
+            if let url = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId })?.bundleURL {
+                NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
             } else {
                 NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Visual Studio Code.app"))
             }
@@ -2206,11 +2206,11 @@ struct IntegrationCardView: View {
             return
         }
 
-        // No cwd: activate running instance or launch fresh
-        if let running = ids.compactMap({ id in
+        // No cwd: bring the running instance forward or launch fresh
+        if let url = ids.compactMap({ id in
             NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
-        }).first {
-            running.activate(options: .activateIgnoringOtherApps)
+        }).first?.bundleURL {
+            NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
             return
         }
         if let appURL = appURL {
