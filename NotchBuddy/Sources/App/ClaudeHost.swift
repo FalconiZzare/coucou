@@ -81,10 +81,52 @@ struct ClaudeHost: Equatable {
 
     private static let tabQueue = DispatchQueue(label: "fr.louisraille.coucou.terminal-tab")
 
+    /// AppleScript that selects the session's own tab and window in its terminal, found by tty,
+    /// or nil when the terminal has no such scripting or the tty isn't safe to embed.
+    static func tabScript(bundleId: String, tty: String?) -> String? {
+        guard let tty, isTTY(tty) else { return nil }
+        switch bundleId {
+        case "com.apple.Terminal":
+            return """
+                tell application id "com.apple.Terminal"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            if tty of t is "\(tty)" then
+                                set selected tab of w to t
+                                set index of w to 1
+                                return
+                            end if
+                        end repeat
+                    end repeat
+                end tell
+                """
+        case "com.googlecode.iterm2":
+            // iTerm2 nests sessions (split panes) in tabs; each session has its own tty.
+            return """
+                tell application id "com.googlecode.iterm2"
+                    repeat with w in windows
+                        repeat with t in tabs of w
+                            repeat with s in sessions of t
+                                if tty of s is "\(tty)" then
+                                    select w
+                                    select t
+                                    select s
+                                    return
+                                end if
+                            end repeat
+                        end repeat
+                    end repeat
+                end tell
+                """
+        default:
+            return nil
+        }
+    }
+
     /// Opens the app at `url` through Launch Services: NSRunningApplication.activate() is ignored
     /// on macOS 14+ unless the caller is the active app, which Coucou never is. For Apple Terminal
-    /// with the session's tty, that tab is selected and its window raised first, so the session's
-    /// own window comes back rather than the last one used.
+    /// and iTerm2 with the session's tty, that tab is selected and its window raised first, so the
+    /// session's own window comes back rather than the last one used.
     static func bringForward(_ url: URL, bundleId: String, tty: String?) {
         let open: @Sendable () -> Void = {
             DispatchQueue.main.async {
@@ -92,22 +134,10 @@ struct ClaudeHost: Equatable {
             }
         }
         #if !APPSTORE
-        if bundleId == "com.apple.Terminal", let tty, isTTY(tty) {
+        if let script = tabScript(bundleId: bundleId, tty: tty) {
             tabQueue.async {
                 var error: NSDictionary?
-                NSAppleScript(source: """
-                    tell application id "com.apple.Terminal"
-                        repeat with w in windows
-                            repeat with t in tabs of w
-                                if tty of t is "\(tty)" then
-                                    set selected tab of w to t
-                                    set index of w to 1
-                                    return
-                                end if
-                            end repeat
-                        end repeat
-                    end tell
-                    """)?.executeAndReturnError(&error)
+                NSAppleScript(source: script)?.executeAndReturnError(&error)
                 open()
             }
             return
