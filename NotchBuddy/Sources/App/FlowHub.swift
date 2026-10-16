@@ -73,9 +73,13 @@ enum HubPage: String, CaseIterable, Identifiable {
 
 /// The colors of the Coucou Flow window: the island's dark, with Coucou's orange.
 enum HubTheme {
-    /// OLED black: the window and the sidebar.
+    /// OLED black: the window.
     static let window = Color.black
-    static let sidebar = Color.black
+    /// The sidebar's card, a shade lighter than the pages so the two read as two surfaces.
+    static let sidebar = Color(hex: "#161618")
+    /// The sidebar's rows: a soft pill under the pointer, a brighter one for the page shown.
+    static let sidebarHover = Color.white.opacity(0.05)
+    static let sidebarSelected = Color.white.opacity(0.10)
     /// The big card on the right, where the pages are.
     static let panel = Color(hex: "#0E0F11")
     static let card = Color(hex: "#18191C")
@@ -247,24 +251,51 @@ struct FlowHubView: View {
 
 // MARK: - Sidebar
 
+/// The sidebar's selection pill, shared by every row so it slides from one to the next.
+private struct HubSidebarSelectionKey: EnvironmentKey {
+    static var defaultValue: Namespace.ID? { nil }
+}
+
+private extension EnvironmentValues {
+    var hubSidebarSelection: Namespace.ID? {
+        get { self[HubSidebarSelectionKey.self] }
+        set { self[HubSidebarSelectionKey.self] = newValue }
+    }
+}
+
+/// A press that dips and springs back, for the sidebar's buttons.
+private struct HubSidebarPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.6), value: configuration.isPressed)
+    }
+}
+
+/// A card a shade lighter than the pages: Mochi and the name at its head, plain white
+/// symbols, the page shown as a soft grey pill.
 private struct HubSidebar: View {
     @ObservedObject var router: HubRouter
     @ObservedObject private var flow = FlowDictation.shared
+    @Namespace private var selection
+    @State private var statusHover = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: 0) {
+            // The band the window's buttons sit in.
+            Color.clear.frame(height: 30)
             HStack(spacing: 10) {
                 // The scene draws Mochi a little below its middle (room for his
                 // hops and hats): lifted so his body lines up with the name.
-                HubLiveMochi(size: 28)
-                    .offset(y: -4)
+                HubLiveMochi(size: 24)
+                    .offset(y: -3)
                 Text(verbatim: "Coucou")
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.white)
             }
             .padding(.horizontal, 8)
-            // Halfway between the window's buttons and "FLOW".
-            .padding(.top, 25)
-            .padding(.bottom, 31)
+            .padding(.bottom, 16)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 2) {
@@ -283,75 +314,130 @@ private struct HubSidebar: View {
             status
                 .padding(.top, 8)
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 14)
-        .frame(width: 228)
+        .padding(.horizontal, 10)
+        .padding(.bottom, 12)
+        .frame(width: 220)
         .frame(maxHeight: .infinity)
-        .background(HubTheme.sidebar)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(HubTheme.sidebar))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(HubTheme.line))
+        // The same gaps as the pages' card, so the two cards sit side by side on the black.
+        .padding(10)
+        .environment(\.hubSidebarSelection, selection)
+        // The pill slides on a spring to the page picked.
+        .animation(reduceMotion ? .easeOut(duration: 0.12) : .spring(response: 0.34, dampingFraction: 0.82),
+                   value: router.page)
     }
 
+    /// Quieter than the pages above it, with the same hover pill.
     @ViewBuilder private var status: some View {
         let ready = flow.isEnabled && flow.trusted
         Button { router.page = .settings } label: {
-            HStack(spacing: 8) {
+            HStack(spacing: 10) {
                 Circle()
                     .fill(ready ? HubTheme.green : (flow.isEnabled ? HubTheme.accent : HubTheme.muted))
                     .frame(width: 7, height: 7)
+                    .frame(width: 18)
                 Text(ready ? String(format: String(localized: "hub.status-ready %@"), flow.key.label)
                      : (flow.isEnabled ? String(localized: "hub.status-access") : String(localized: "hub.status-off")))
                     .font(.system(size: 12))
-                    .foregroundColor(Color(hex: "#A4A9B1"))
+                    .foregroundColor(.white.opacity(statusHover ? 0.85 : 0.55))
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 0)
             }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 10).fill(HubTheme.card))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.white.opacity(0.06)))
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(statusHover ? HubTheme.sidebarHover : .clear))
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(HubSidebarPressStyle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) { statusHover = hovering }
+        }
     }
 }
 
-/// "FLOW", "NOTCH": the small capitals above a group of pages.
+/// "Flow", "Notch": the quiet label above a group of pages.
 private struct HubSidebarHeader: View {
     let text: String
 
     var body: some View {
-        Text(text.uppercased(with: .current))
-            .font(.system(size: 10.5, weight: .bold))
-            .tracking(1.2)
-            .foregroundColor(HubTheme.muted)
+        Text(text)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundColor(.white.opacity(0.38))
             .padding(.horizontal, 10)
             .padding(.bottom, 4)
     }
 }
 
+/// One page: a white symbol and the name, brighter under the pointer and brightest when shown.
 private struct HubSidebarItem: View {
     let page: HubPage
     let selected: Bool
     let action: () -> Void
     @State private var hover = false
+    /// Bumped each time the row is picked, to bounce its icon once.
+    @State private var bounce = 0
+    @Environment(\.hubSidebarSelection) private var selection
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private static let pill = RoundedRectangle(cornerRadius: 8, style: .continuous)
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: page.symbol)
-                    .font(.system(size: 14, weight: .medium))
-                    .frame(width: 20)
+                    .font(.system(size: 13))
+                    .frame(width: 18)
+                    .foregroundColor(.white.opacity(selected ? 0.95 : (hover ? 0.85 : 0.6)))
+                    // Leans toward the pointer a hair, and bounces once when picked.
+                    .offset(x: hover && !selected && !reduceMotion ? 1.5 : 0)
+                    .symbolEffect(.bounce, value: bounce)
                 Text(page.title)
-                    .font(.system(size: 14, weight: selected ? .semibold : .regular))
+                    .font(.system(size: 13, weight: selected ? .medium : .regular))
+                    .foregroundColor(.white.opacity(selected ? 0.95 : (hover ? 0.92 : 0.78)))
+                    .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            .foregroundColor(selected ? HubTheme.text : Color(hex: "#B7BBC2"))
-            .padding(.horizontal, 10)
-            .frame(height: 32)
-            .background(RoundedRectangle(cornerRadius: 9)
-                .fill(Color.white.opacity(selected ? 0.08 : (hover ? 0.04 : 0))))
+            .padding(.leading, 10)
+            .padding(.trailing, 8)
+            .padding(.vertical, 6)
+            .background { background }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .onHover { hover = $0 }
+        .buttonStyle(HubSidebarPressStyle())
+        .onHover { hovering in
+            withAnimation(.easeOut(duration: 0.14)) { hover = hovering }
+        }
+        .onChange(of: selected) { _, now in
+            if now && !reduceMotion { bounce += 1 }
+        }
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    @ViewBuilder private var background: some View {
+        ZStack {
+            if hover && !selected {
+                Self.pill.fill(HubTheme.sidebarHover)
+                    .transition(.opacity)
+            }
+            if selected {
+                let pill = Self.pill
+                    .fill(HubTheme.sidebarSelected)
+                    // A hairline lit from above, so the pill reads as raised.
+                    .overlay(Self.pill.strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.10), .white.opacity(0.02)],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 0.5))
+                if let selection {
+                    pill.matchedGeometryEffect(id: "selection", in: selection)
+                } else {
+                    pill
+                }
+            }
+        }
     }
 }
 
