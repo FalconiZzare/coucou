@@ -67,6 +67,7 @@ final class HookServer: @unchecked Sendable {
     private func handledNote(pill: String) -> String {
         switch pill {
         case "agent_cursor":  return "Handled in Cursor."
+        case "agent_jetbrains": return "Handled in \(jetBrainsName)."
         case "agent_codex":   return "Handled in Codex."
         case "agent_copilot": return "Handled in Copilot CLI."
         case "agent_muse":    return "Handled in Muse Code."
@@ -80,6 +81,7 @@ final class HookServer: @unchecked Sendable {
     private func waitingNote(pill: String) -> String {
         switch pill {
         case "agent_cursor":  return "Still waiting in Cursor."
+        case "agent_jetbrains": return "Still waiting in \(jetBrainsName)."
         case "agent_codex":   return "Still waiting in Codex."
         case "agent_copilot": return "Still waiting in Copilot CLI."
         case "agent_muse":    return "Still waiting in Muse Code."
@@ -433,12 +435,14 @@ final class HookServer: @unchecked Sendable {
         let isVSCodeEditor = !isCursorEditor && (
             termProgram.lowercased().contains("vscode") ||
             bundleId.lowercased().contains("vscode"))
+        let isJetBrainsEditor = JetBrainsIDE.matches(bundleId: bundleId)
 
         // Routing:
         // • "codex" → agent_codex (GitHub build only: workspace pill, approvals in the notch)
         // • other valid coucou_agent → external pill (fire-and-forget, no approval card)
         // • Cursor bundle ID → agent_cursor
         // • VS Code → integration_claude
+        // • a JetBrains IDE (WebStorm, PyCharm…) → agent_jetbrains
         // • a known terminal (Warp, Terminal, iTerm…) → integration_claude, host recorded on the task
         #if !APPSTORE
         let isCodexEvent = rawAgent == "codex"
@@ -459,6 +463,9 @@ final class HookServer: @unchecked Sendable {
             isExternalAgent = false
         } else if isVSCodeEditor {
             agentId = "integration_claude"
+            isExternalAgent = false
+        } else if isJetBrainsEditor {
+            agentId = "agent_jetbrains"
             isExternalAgent = false
         } else if let host = ClaudeHost.terminal(termProgram: termProgram, bundleId: bundleId) {
             agentId = "integration_claude"
@@ -770,6 +777,7 @@ final class HookServer: @unchecked Sendable {
         let isVSCodeEditor = !isCursorEditor && (
             termProgram.lowercased().contains("vscode") ||
             bundleId.lowercased().contains("vscode"))
+        let isJetBrainsEditor = JetBrainsIDE.matches(bundleId: bundleId)
 
         // Codex, Copilot CLI and Muse Code get the same approval card as Claude Code / Cursor.
         // Other external agents (any other coucou_agent) answer immediately with "ask"
@@ -810,6 +818,8 @@ final class HookServer: @unchecked Sendable {
             pillId = "agent_hermes"
         } else if isCursorEditor {
             pillId = "agent_cursor"
+        } else if isJetBrainsEditor {
+            pillId = "agent_jetbrains"
         } else {
             pillId = "integration_claude"
         }
@@ -817,7 +827,7 @@ final class HookServer: @unchecked Sendable {
         let terminalHost = isCursorEditor || isVSCodeEditor ? nil
             : ClaudeHost.terminal(termProgram: termProgram, bundleId: bundleId)
         let isTerminal = terminalHost != nil && ClaudeHost.terminalCardsEnabled
-        guard isCodexRequest || isCopilotRequest || isMuseRequest || isHermesRequest || isCursorEditor || isVSCodeEditor || isTerminal else {
+        guard isCodexRequest || isCopilotRequest || isMuseRequest || isHermesRequest || isCursorEditor || isVSCodeEditor || isJetBrainsEditor || isTerminal else {
             Task.detached { [weak self] in
                 self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
                 close(fd)
@@ -952,6 +962,7 @@ final class HookServer: @unchecked Sendable {
         let isVSCodeEditor = !isCursorEditor && (
             termProgram.lowercased().contains("vscode") ||
             bundleId.lowercased().contains("vscode"))
+        let isJetBrainsEditor = JetBrainsIDE.matches(bundleId: bundleId)
         #if !APPSTORE
         let isCodexRequest = rawAgent == "codex"
         #else
@@ -962,6 +973,8 @@ final class HookServer: @unchecked Sendable {
             pillId = "agent_codex"
         } else if isCursorEditor {
             pillId = "agent_cursor"
+        } else if isJetBrainsEditor {
+            pillId = "agent_jetbrains"
         } else {
             pillId = "integration_claude"
         }
@@ -969,7 +982,7 @@ final class HookServer: @unchecked Sendable {
         let terminalHost = isCursorEditor || isVSCodeEditor ? nil
             : ClaudeHost.terminal(termProgram: termProgram, bundleId: bundleId)
         let isTerminal = terminalHost != nil && ClaudeHost.terminalCardsEnabled
-        guard isCodexRequest || isCursorEditor || isVSCodeEditor || isTerminal else {
+        guard isCodexRequest || isCursorEditor || isVSCodeEditor || isJetBrainsEditor || isTerminal else {
             Task.detached { [weak self] in
                 self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
                 close(fd)
@@ -1037,6 +1050,12 @@ final class HookServer: @unchecked Sendable {
     @MainActor
     private var claudeHostName: String {
         ClaudeHost.name(for: AppState.shared.tasks.first { $0.id == "integration_claude" }?.hostApp)
+    }
+
+    /// The IDE the JetBrains pill's current session runs in: "WebStorm", "PyCharm"…
+    @MainActor
+    private var jetBrainsName: String {
+        JetBrainsIDE.name(for: AppState.shared.tasks.first { $0.id == "agent_jetbrains" }?.sessionBundleId)
     }
 
     /// Records the session an event came from, then refreshes its card.

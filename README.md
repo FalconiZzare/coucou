@@ -70,7 +70,7 @@ Flow dictation and the Notetaker are on the Mac for now; Windows and Linux are n
 - 📈 **Portfolio pill** *(macOS)* — track your crypto across 16 networks (Bitcoin, Ethereum, Solana, Polygon, BNB, Avalanche, Arbitrum, Optimism, Base, Dogecoin, Litecoin, TRON, XRP, Cardano, Cosmos, NEAR) and 5 exchanges (Binance, OKX, Bybit, Kraken, Coinbase) in the notch. Live balances, 7-day sparklines and 24-hour price change per holding. Read-only API keys for exchanges, public addresses for wallets — nothing leaves your Mac.
 - 📊 **Claude plan usage** *(macOS, GitHub build)* — a small pill in the notch header shows your 5-hour and weekly Claude plan limits. Enable it from Settings → Agents → Plan usage. Pro and Max plans only.
 - 📊 **Codex plan usage** *(macOS, GitHub build)* — a Codex pill next to it shows your Codex limits and how many free resets you have left, read from the Codex CLI. Turn it on in Settings → Agents → Plan usage.
-- 📋 **Declare the tools you use** — open Settings → Active pills and pick your main workspace tool (VS Code, Cursor, Codex or Antigravity), then toggle up to 4 more: Gemini CLI, Anthropic, Google AI, OpenAI, Ollama, LM Studio and service integrations *(macOS)*.
+- 📋 **Declare the tools you use** — open Settings → Active pills and pick your main workspace tool (VS Code, Cursor, JetBrains, Codex or Antigravity), then toggle up to 4 more: Gemini CLI, Anthropic, Google AI, OpenAI, Ollama, LM Studio and service integrations *(macOS)*.
 - 📎 **Drop a file on the notch** — Mochi turns into a box and swallows it, then ask a question about it or send it by email *(email: macOS, Mail.app)*.
 - 🖥️ **Mochi on the desktop** — drag Mochi out of the island to set him loose on your desktop: he floats as a 120 pt companion, follows your cursor, wears his outfit, reacts to alerts by flying home and flying back, and comes back where you left him on next launch.
 - 🪟 **Drag Mochi onto any window** — attach that window as context for Claude *(macOS)*.
@@ -315,6 +315,7 @@ On the Mac, open Coucou from the Dock or the menu bar: its window has every sett
 | **Active pills** *(macOS)* | choose which tools and agents appear in the island | Settings → Active pills |
 | **Flow dictation** *(macOS, GitHub build)* | hold a key, speak, the words are pasted | Coucou → Flow → Settings · the Accessibility and Microphone permissions |
 | **Parakeet** *(macOS, Apple silicon)* | offline dictation, more accurate | Coucou → Flow → Settings → Recognition → **Download** (about 650 MB) |
+| **Accessibility** *(macOS, GitHub build)* | Open brings back the right project window when a JetBrains IDE has several projects open | System Settings → Privacy & Security → Accessibility (Device Control and Data Access on newer macOS) → turn on Coucou |
 | Stripe, n8n, GitHub, Vercel, Resend, Notion, Cal.com | the service pills | Keychain / Windows Credential Manager / Secret Service, all optional |
 
 If Coucou isn't running, the hook exits immediately: **Claude Code is never blocked.**
@@ -327,6 +328,7 @@ If Coucou isn't running, the hook exits immediately: **Claude Code is never bloc
 | Gemini CLI | Settings → Gemini CLI → **Install hooks** | No |
 | Antigravity | Settings → Antigravity → **Install hooks** | No |
 | Cursor | Hooks installed automatically alongside Claude Code | No |
+| JetBrains IDEs (WebStorm, PyCharm, IntelliJ IDEA…) | Hooks installed automatically alongside Claude Code | Mac only |
 | Codex | `--agent codex` flag; Settings → Codex → **Install hooks** | No |
 | Copilot CLI | `--agent copilot` flag + camelCase events | No |
 | Muse Code | `--agent muse` flag | No |
@@ -334,6 +336,8 @@ If Coucou isn't running, the hook exits immediately: **Claude Code is never bloc
 | Amp | Plugin — **Settings → Amp Plugin → Install** | No |
 | Hermes | Plugin — **Settings → Agents → Hermes → Install** | No |
 | Any other | `--agent <name>` flag; see [`docs/AGENTS.md`](docs/AGENTS.md) | No |
+
+JetBrains sessions are recognised from the IDE that runs them, so nothing extra is installed. When the same IDE has several projects open (two WebStorm windows, say), Open and ⌃⌥T bring back the window of the session's project only if Coucou is allowed in System Settings → Privacy & Security → Accessibility; without it the IDE comes forward on its last-used window.
 
 OpenCode, Amp and Hermes use a plugin model rather than a hook command. Coucou installs the plugin file into `~/.config/opencode/plugins/`, `~/.config/amp/plugins/` and `~/.hermes/plugins/coucou/` respectively. On Windows and Linux the plugins start the `coucou-hook` relay directly — see [`windows/README.md`](windows/README.md#supported-agents).
 

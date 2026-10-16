@@ -825,7 +825,10 @@ final class IslandWindowController: NSWindowController {
             NotificationCenter.default.post(name: .triggerEmote, object: BotEmote.annoyed)
             return
         }
-        if !TerminalTarget.activate(sessionBundleId: state.focusTask?.sessionBundleId, tty: state.focusTask?.sessionTTY) {
+        let task = state.focusTask
+        if !(task?.id == "agent_jetbrains"
+             && JetBrainsIDE.open(sessionBundleId: task?.sessionBundleId, cwd: task?.sessionCwd)),
+           !TerminalTarget.activate(sessionBundleId: task?.sessionBundleId, tty: task?.sessionTTY) {
             NSWorkspace.shared.open(
                 URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
         }
