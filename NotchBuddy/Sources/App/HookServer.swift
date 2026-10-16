@@ -522,6 +522,11 @@ final class HookServer: @unchecked Sendable {
             state.tasks[idx].sessionTTY = tty
         }
 
+        // Whether this event puts something of its session on the card: a prompt, a tool, an
+        // answer, a question. Only those move the pill's name (see the end of this function).
+        var showsOnPill = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure",
+                           "Stop", "StopFailure", "SubagentStart", "SubagentStop"].contains(name)
+
         switch name {
 
         case "SessionStart":
@@ -590,12 +595,16 @@ final class HookServer: @unchecked Sendable {
             sessions.note(pill: agentId, display: display, working: false)
             let message = payload["message"] as? String ?? ""
             let lower = message.lowercased()
+            // "Claude is waiting for your input", sent by a session left idle, shows nothing:
+            // it must not pull the name back from the session the user went on with.
             if lower.contains("rate limit") || lower.contains("limite d") {
                 state.updateTask(id: agentId, state: .ratelimit)
                 SoundEngine.shared.play("rate")
+                showsOnPill = true
             } else if message.hasSuffix("?") {
                 state.updateTask(id: agentId, state: .question)
                 appendStep(id: agentId, step: message)
+                showsOnPill = true
             }
 
         case "Stop":
@@ -678,8 +687,9 @@ final class HookServer: @unchecked Sendable {
 
         // Sessions sharing a pill share its steps, so the name follows the session that spoke
         // last: the project on the card is always the one whose prompt, tool or answer it shows.
-        // Opening or closing a session shows nothing, so it leaves the name where it is.
-        if !isExternalAgent, name != "SessionStart", name != "SessionEnd" {
+        // Opening or closing a session, an idle notice or an interrupt show nothing, so they
+        // leave the name where it is.
+        if !isExternalAgent, showsOnPill {
             sessions.takeDisplay(pill: agentId, session: sessionId)
             applyDisplayOwner(pill: agentId)
         }
@@ -882,6 +892,9 @@ final class HookServer: @unchecked Sendable {
                                                         cwd: cwd, hostApp: terminalHost?.bundleId,
                                                         bundleId: bundleId),
                    working: true, externalAgent: nil, tty: tty)
+        // The card now asks for this session: its project name and window go with it.
+        sessions.takeDisplay(pill: pillId, session: sessionId)
+        applyDisplayOwner(pill: pillId)
         state.updateTask(id: pillId, state: .approval)
         SoundEngine.shared.play("approval")
 
@@ -1020,6 +1033,8 @@ final class HookServer: @unchecked Sendable {
                                                         cwd: cwd, hostApp: terminalHost?.bundleId,
                                                         bundleId: bundleId),
                    working: true, externalAgent: nil, tty: tty)
+        sessions.takeDisplay(pill: pillId, session: sessionId)
+        applyDisplayOwner(pill: pillId)
         state.updateTask(id: pillId, state: .question)
         state.pendingQuestion = parsed
         state.isPinned = true
