@@ -90,8 +90,11 @@ enum GitHubReview {
 
         do {
             let threads = try await inboxThreads()
-            let (nodes, details) = try await pullRequests(threads.map { ($0.repo, $0.number) })
-            note = note ?? ssoNote(details)
+            let (nodes, answers, timedOut) = try await pullRequests(threads.map { ($0.repo, $0.number) })
+            note = note ?? answers.lazy.compactMap(ssoNote).first
+            if timedOut {
+                note = note ?? "Part of your GitHub inbox didn't load: GitHub took too long. Refresh to try again."
+            }
             for (thread, node) in zip(threads, nodes) {
                 guard let node, var pr = pullRequest(node, repo: thread.repo) else { continue }
                 pr.reason = thread.reason
@@ -141,11 +144,15 @@ enum GitHubReview {
         return threads
     }
 
-    /// Each pull request's fields, in one query, in the order asked (nil for one GitHub no longer
-    /// shows the account), and GitHub's whole answer.
+    /// How many pull requests one query asks for. GitHub gives up on a query after about ten
+    /// seconds and answers 502: 100 at once took that long, 20 take about two.
+    private static let batchSize = 20
+
+    /// Each pull request's fields, in the order asked (nil for one GitHub no longer shows the
+    /// account), GitHub's answers, and whether a batch timed out twice and was left out. The
+    /// batches go in parallel.
     private static func pullRequests(_ refs: [(repo: String, number: Int)]) async throws
-        -> ([[String: Any]?], [String: Any]) {
-        guard !refs.isEmpty else { return ([], [:]) }
+        -> (nodes: [[String: Any]?], answers: [[String: Any]], timedOut: Bool) {
         // Owner and repository names are letters, digits, ".", "-" and "_": anything else is
         // left out rather than written into the query.
         let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: ".-_"))
@@ -156,13 +163,45 @@ enum GitHubReview {
             guard parts.count == 2, safe(parts[0]), safe(parts[1]) else { continue }
             fields.append("p\(i): repository(owner: \"\(parts[0])\", name: \"\(parts[1])\") { pullRequest(number: \(ref.number)) { ...pr } }")
         }
-        guard !fields.isEmpty else { return (refs.map { _ in nil }, [:]) }
-        let json = try await graphQL("query {\n\(fields.joined(separator: "\n"))\n}\n" + prFragment)
-        let data = json["data"] as? [String: Any] ?? [:]
+        let queries = stride(from: 0, to: fields.count, by: batchSize).map { start in
+            "query {\n\(fields[start..<min(start + batchSize, fields.count)].joined(separator: "\n"))\n}\n" + prFragment
+        }
+
+        var answers: [[String: Any]] = []
+        var timedOut = false
+        // Data across the tasks: GitHub's JSON is not Sendable.
+        try await withThrowingTaskGroup(of: Data?.self) { group in
+            for query in queries {
+                group.addTask {
+                    // A 502 or 504 is GitHub giving up on a slow query: once more, then without it.
+                    for attempt in 0..<2 {
+                        do {
+                            let json = try await graphQL(query)
+                            return try JSONSerialization.data(withJSONObject: json)
+                        } catch let failure as Failure where failure.status == 502 || failure.status == 504 {
+                            if attempt == 1 { return nil }
+                        }
+                    }
+                    return nil
+                }
+            }
+            for try await data in group {
+                guard let data, let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                    timedOut = true
+                    continue
+                }
+                answers.append(json)
+            }
+        }
+
+        var data: [String: Any] = [:]
+        for answer in answers {
+            for (key, value) in answer["data"] as? [String: Any] ?? [:] { data[key] = value }
+        }
         let nodes = refs.indices.map { i in
             (data["p\(i)"] as? [String: Any])?["pullRequest"] as? [String: Any]
         }
-        return (nodes, json)
+        return (nodes, answers, timedOut)
     }
 
     /// A pull request from GitHub's GraphQL fields (`prFragment`).
