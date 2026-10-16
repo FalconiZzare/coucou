@@ -425,6 +425,7 @@ final class HookServer: @unchecked Sendable {
 
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
+        let tty         = payload["tty"]          as? String ?? ""
 
         // Cursor identified solely by its stable Electron bundle ID.
         // ToDesktop builds other apps too — do not match on "todesktop" alone.
@@ -508,12 +509,18 @@ final class HookServer: @unchecked Sendable {
             if approvals.hasEntries(forPill: agentId) { state.updateTask(id: agentId, state: .approval) }
         }
 
+        // Sessions sharing a pill share its tty: it follows the one that spoke last, so Open
+        // after a Stop brings back the tab of the session that just finished.
+        if !isExternalAgent, !tty.isEmpty, let idx = state.tasks.firstIndex(where: { $0.id == agentId }) {
+            state.tasks[idx].sessionTTY = tty
+        }
+
         switch name {
 
         case "SessionStart":
             activeSessionId = sessionId
             upsertTask(pill: agentId, display: display, working: false,
-                       externalAgent: isExternalAgent ? validAgent : nil)
+                       externalAgent: isExternalAgent ? validAgent : nil, tty: tty)
             if let idx = state.tasks.firstIndex(where: { $0.id == agentId }) { state.tasks[idx].finalLine = nil }
             nbLog("SessionStart \(isExternalAgent ? agentId : projectName) (\(sessionId.prefix(8)))")
             NotificationCenter.default.post(name: .checkMondayRecap, object: nil)
@@ -528,7 +535,7 @@ final class HookServer: @unchecked Sendable {
         case "UserPromptSubmit":
             activeSessionId = sessionId
             upsertTask(pill: agentId, display: display, working: true,
-                       externalAgent: isExternalAgent ? validAgent : nil)
+                       externalAgent: isExternalAgent ? validAgent : nil, tty: tty)
             if let idx = state.tasks.firstIndex(where: { $0.id == agentId }) { state.tasks[idx].finalLine = nil }
             state.updateTask(id: agentId, state: .thinking)
             if let prompt = payload["prompt"] as? String, !prompt.isEmpty {
@@ -547,7 +554,7 @@ final class HookServer: @unchecked Sendable {
             // Skip state/step update here to avoid flickering over the question card.
             guard tool != "AskUserQuestion" else { break }
             upsertTask(pill: agentId, display: display, working: true,
-                       externalAgent: isExternalAgent ? validAgent : nil)
+                       externalAgent: isExternalAgent ? validAgent : nil, tty: tty)
             state.updateTask(id: agentId, state: .working)
             let input = payload["tool_input"] as? [String: Any] ?? [:]
             let step = localizedStep(tool: tool, input: input)
@@ -758,6 +765,7 @@ final class HookServer: @unchecked Sendable {
         let rawAgent = payload["coucou_agent"] as? String ?? ""
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
+        let tty         = payload["tty"]          as? String ?? ""
         let isCursorEditor = bundleId.lowercased() == "com.todesktop.230313mzl4w4u92"
         let isVSCodeEditor = !isCursorEditor && (
             termProgram.lowercased().contains("vscode") ||
@@ -855,7 +863,7 @@ final class HookServer: @unchecked Sendable {
                    display: PillSessionRegistry.Display(session: sessionId, projectName: projectName,
                                                         cwd: cwd, hostApp: terminalHost?.bundleId,
                                                         bundleId: bundleId),
-                   working: true, externalAgent: nil)
+                   working: true, externalAgent: nil, tty: tty)
         state.updateTask(id: pillId, state: .approval)
         SoundEngine.shared.play("approval")
 
@@ -939,6 +947,7 @@ final class HookServer: @unchecked Sendable {
         let rawAgent    = payload["coucou_agent"] as? String ?? ""
         let termProgram = payload["term_program"]  as? String ?? ""
         let bundleId    = payload["bundle_id"]     as? String ?? ""
+        let tty         = payload["tty"]           as? String ?? ""
         let isCursorEditor = bundleId.lowercased() == "com.todesktop.230313mzl4w4u92"
         let isVSCodeEditor = !isCursorEditor && (
             termProgram.lowercased().contains("vscode") ||
@@ -989,7 +998,7 @@ final class HookServer: @unchecked Sendable {
                    display: PillSessionRegistry.Display(session: sessionId, projectName: projectName,
                                                         cwd: cwd, hostApp: terminalHost?.bundleId,
                                                         bundleId: bundleId),
-                   working: true, externalAgent: nil)
+                   working: true, externalAgent: nil, tty: tty)
         state.updateTask(id: pillId, state: .question)
         state.pendingQuestion = parsed
         state.isPinned = true
@@ -1035,14 +1044,14 @@ final class HookServer: @unchecked Sendable {
     /// nil for a workspace pill.
     @MainActor
     private func upsertTask(pill: String, display: PillSessionRegistry.Display,
-                            working: Bool, externalAgent: String?) {
+                            working: Bool, externalAgent: String?, tty: String = "") {
         sessions.note(pill: pill, display: display, working: working)
         if let externalAgent {
             upsertExternalAgent(id: pill, name: externalAgent)
         } else {
             upsertWorkspaceTask(id: pill, projectName: display.projectName, cwd: display.cwd,
                                 hostApp: display.hostApp, bundleId: display.bundleId,
-                                session: display.session)
+                                session: display.session, tty: tty)
         }
     }
 
@@ -1067,9 +1076,13 @@ final class HookServer: @unchecked Sendable {
     /// still running), so a second session under the same client cannot rename the card,
     /// or send "Open terminal" elsewhere, out from under the first.
     @MainActor
-    private func upsertWorkspaceTask(id: String, projectName: String, cwd: String = "", hostApp: String? = nil, bundleId: String = "", session: String) {
+    private func upsertWorkspaceTask(id: String, projectName: String, cwd: String = "", hostApp: String? = nil,
+                                     bundleId: String = "", session: String, tty: String = "") {
         let state = AppState.shared
         if let idx = state.tasks.firstIndex(where: { $0.id == id }) {
+            // The tty follows the session that spoke last (not the display owner), so Open on a
+            // question or approval brings back the tab of the session that asked.
+            if !tty.isEmpty { state.tasks[idx].sessionTTY = tty }
             guard sessions.ownsDisplay(pill: id, session: session) else { return }
             state.tasks[idx].name = projectName
             if !cwd.isEmpty { state.tasks[idx].sessionCwd = cwd }
@@ -1085,6 +1098,7 @@ final class HookServer: @unchecked Sendable {
                              state: .idle, steps: [], source: source, isIntegration: true)
         if id == "integration_claude" { task.hostApp = hostApp }
         if !bundleId.isEmpty { task.sessionBundleId = bundleId }
+        if !tty.isEmpty { task.sessionTTY = tty }
         if let mainIdx = state.tasks.firstIndex(where: { $0.id == state.mainPillId }) {
             state.tasks.insert(task, at: mainIdx + 1)
         } else {
@@ -3183,7 +3197,26 @@ private let nbHookPythonGitHub = """
 #!/usr/bin/env python3
 # nb-hook.py — Coucou hook relay for Claude Code and third-party agents (GitHub version)
 # Reads JSON from stdin, forwards to Coucou via Unix socket, translates response.
-import sys, json, os, socket
+import sys, json, os, socket, subprocess
+
+def session_tty():
+    # The session's terminal tab ("/dev/ttys004"), as Terminal.app names its tabs. Hooks run
+    # without a controlling terminal, so walk up to the agent's own process. '' when none has one.
+    pid = os.getpid()
+    for _ in range(8):
+        try:
+            out = subprocess.run(['ps', '-o', 'tty=,ppid=', '-p', str(pid)],
+                                 capture_output=True, text=True, timeout=1).stdout.split()
+        except Exception:
+            return ''
+        if len(out) != 2:
+            return ''
+        if out[0].startswith('tty'):
+            return '/dev/' + out[0]
+        if not out[1].isdigit() or int(out[1]) <= 1:
+            return ''
+        pid = int(out[1])
+    return ''
 
 def normalize_event(name):
     mapping = {
@@ -3302,6 +3335,7 @@ def main():
         payload.setdefault('iterm_session_id', env.get('ITERM_SESSION_ID', ''))
         payload.setdefault('term_session_id', env.get('TERM_SESSION_ID', ''))
         payload.setdefault('bundle_id', env.get('__CFBundleIdentifier', ''))
+        payload.setdefault('tty', session_tty())
         if 'cwd' not in payload or not payload['cwd']:
             paths = payload.get('workspacePaths') or payload.get('workspace_roots', [])
             if isinstance(paths, list) and paths:
@@ -3369,6 +3403,7 @@ def main():
     payload.setdefault('iterm_session_id', env.get('ITERM_SESSION_ID', ''))
     payload.setdefault('term_session_id', env.get('TERM_SESSION_ID', ''))
     payload.setdefault('bundle_id', env.get('__CFBundleIdentifier', ''))
+    payload.setdefault('tty', session_tty())
     if 'cwd' not in payload or not payload['cwd']:
         paths = payload.get('workspacePaths') or payload.get('workspace_roots', [])
         if isinstance(paths, list) and paths:
