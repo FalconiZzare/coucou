@@ -7,11 +7,13 @@ import SwiftUI
 enum HubPage: String, CaseIterable, Identifiable {
     case dictation, notes, insights, dictionary, snippets, styles, settings
     case general, pills, agents, chat, integrations, voice, shortcuts
+    case pullRequests
 
     var id: String { rawValue }
 
     static let flowPages: [HubPage] = [.dictation, .notes, .insights, .dictionary, .snippets, .styles, .settings]
     static let notchPages: [HubPage] = [.general, .pills, .agents, .chat, .integrations, .voice, .shortcuts]
+    static let githubPages: [HubPage] = [.pullRequests]
 
     /// The section of Settings this page shows, for the notch's pages.
     var settingsSection: String? {
@@ -48,6 +50,7 @@ enum HubPage: String, CaseIterable, Identifiable {
         case .snippets:   return String(localized: "hub.page.snippets")
         case .styles:     return String(localized: "hub.page.styles")
         case .settings:   return String(localized: "hub.page.settings")
+        case .pullRequests: return "Pull requests"
         }
     }
 
@@ -67,6 +70,7 @@ enum HubPage: String, CaseIterable, Identifiable {
         case .integrations: return "puzzlepiece.extension"
         case .voice:        return "waveform"
         case .shortcuts:    return "keyboard"
+        case .pullRequests: return "arrow.triangle.pull"
         }
     }
 }
@@ -231,6 +235,7 @@ struct FlowHubView: View {
         case .snippets:   HubSnippetsPage()
         case .styles:     HubStylesPage(router: router)
         case .settings:   HubSettingsPage()
+        case .pullRequests: HubPullRequestsPage(router: router)
         default:
             if let section = router.page.settingsSection {
                 VStack(alignment: .leading, spacing: 0) {
@@ -275,6 +280,11 @@ private struct HubSidebar: View {
                     HubSidebarHeader(text: String(localized: "hub.section.notch"))
                         .padding(.top, 14)
                     ForEach(HubPage.notchPages) { page in
+                        HubSidebarItem(page: page, selected: router.page == page) { router.page = page }
+                    }
+                    HubSidebarHeader(text: "GitHub")
+                        .padding(.top, 14)
+                    ForEach(HubPage.githubPages) { page in
                         HubSidebarItem(page: page, selected: router.page == page) { router.page = page }
                     }
                 }

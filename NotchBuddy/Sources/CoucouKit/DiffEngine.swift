@@ -82,6 +82,51 @@ enum DiffEngine {
         )
     }
 
+    /// A pull request file from GitHub: its `patch` holds "@@ -a,b +c,d @@" hunks without file
+    /// headers. GitHub sends no patch for a binary or very large file: that gives a tooLarge diff
+    /// carrying the counts GitHub reported.
+    static func fromPatch(_ patch: String?, path: String, added: Int, removed: Int) -> FileDiff {
+        guard let patch, !patch.isEmpty else {
+            return FileDiff(path: path, added: added, removed: removed, hunks: [], tooLarge: true, isNewFile: false)
+        }
+        var hunks: [DiffHunk] = []
+        var orig = 0, new = 0
+        for raw in splitLines(patch) {
+            if raw.hasPrefix("@@") {
+                (orig, new) = hunkStarts(raw)
+                hunks.append(DiffHunk(origStart: orig, newStart: new, lines: []))
+                continue
+            }
+            guard !hunks.isEmpty else { continue }
+            let text = String(raw.dropFirst())
+            switch raw.first {
+            case "+":
+                hunks[hunks.count - 1].lines.append(DiffLine(kind: .added, text: text, origLine: -1, newLine: new))
+                new += 1
+            case "-":
+                hunks[hunks.count - 1].lines.append(DiffLine(kind: .removed, text: text, origLine: orig, newLine: -1))
+                orig += 1
+            case "\\":
+                continue   // "\ No newline at end of file"
+            default:
+                hunks[hunks.count - 1].lines.append(DiffLine(kind: .context, text: text, origLine: orig, newLine: new))
+                orig += 1
+                new += 1
+            }
+        }
+        return FileDiff(path: path, added: added, removed: removed, hunks: hunks, tooLarge: false, isNewFile: false)
+    }
+
+    /// "@@ -12,7 +14,8 @@ func x()" → (12, 14).
+    private static func hunkStarts(_ header: String) -> (Int, Int) {
+        let parts = header.split(separator: " ")
+        func start(_ sign: Character) -> Int {
+            guard let part = parts.first(where: { $0.first == sign }) else { return 1 }
+            return Int(part.dropFirst().split(separator: ",").first ?? "") ?? 1
+        }
+        return (start("-"), start("+"))
+    }
+
     // MARK: - Line splitting
 
     private static func splitLines(_ text: String) -> [String] {

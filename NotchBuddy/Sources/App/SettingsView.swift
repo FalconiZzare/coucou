@@ -103,6 +103,7 @@ struct SettingsView: View {
     @State private var n8nKey: String       = KeychainStore.shared.get("n8n-api-key")     ?? ""
     @State private var vercelToken: String  = KeychainStore.shared.get("vercel-token")    ?? ""
     @State private var githubToken: String  = KeychainStore.shared.get("github-token")    ?? ""
+    @State private var githubReviewToken: String = KeychainStore.shared.get("github-review-token") ?? ""
     @State private var stripeKey: String    = KeychainStore.shared.get("stripe-api-key")  ?? ""
     @State private var calcomKey: String    = KeychainStore.shared.get("calcom-api-key")  ?? ""
     @State private var notionKey: String    = KeychainStore.shared.get("notion-api-key")  ?? ""
@@ -1287,6 +1288,14 @@ struct SettingsView: View {
                     Text(String(localized: "integrations.github.token-hint"))
                         .font(.system(size: 10))
                         .foregroundColor(Color(hex: "#8E939C"))
+                    #if !APPSTORE
+                    SecureField("Review account token (optional)", text: $githubReviewToken)
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.top, 4)
+                    Text("Another account of yours, for the Pull requests page: it lists what that account can see and approves with it, so your own pull requests can be approved. Classic token with repo, or fine-grained with Pull requests: read and write.")
+                        .font(.system(size: 10))
+                        .foregroundColor(Color(hex: "#8E939C"))
+                    #endif
                 }
 
                 // Stripe
@@ -2080,6 +2089,12 @@ struct SettingsView: View {
             }
         }
 
+        #if !APPSTORE
+        if githubReviewToken != (KeychainStore.shared.get("github-review-token") ?? "") {
+            saveKey("github-review-token", value: githubReviewToken)
+            PullRequestInbox.shared.refresh()
+        }
+        #endif
         saveKey("stripe-api-key",  value: stripeKey)
         saveKey("calcom-api-key",  value: calcomKey)
         saveKey("notion-api-key",  value: notionKey)
