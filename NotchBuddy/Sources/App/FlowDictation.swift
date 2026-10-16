@@ -110,6 +110,13 @@ final class FlowDictation: ObservableObject {
         pill.model.cancelDictation = { [weak self] in self?.cancelAll() }
         pill.model.toggleNote = { NoteTaker.shared.toggleFromPill() }
         pill.model.openHub = { FlowHubController.shared.show() }
+        // ⌥-dragged onto another edge: that is this setting now, so the Flow settings follow.
+        pill.onMoveToEdge = { [weak self] edge in self?.pillEdge = edge }
+        // Picked up with the key held (when the key is an ⌥): a shortcut, not dictation.
+        pill.onDragStart = { [weak self] in
+            guard let self else { return }
+            self.apply(self.logic.otherKey())
+        }
     }
 
     /// The pill's microphone: hands-free, as after a double tap, until ✓ or the key.
