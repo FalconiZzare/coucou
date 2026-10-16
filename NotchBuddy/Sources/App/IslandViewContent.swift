@@ -2692,6 +2692,9 @@ struct GitHubPulseCardView: View {
     let stats: GitHubStats?
     let activity: GitHubActivity?
     let onTapSection: (GitHubDetailSection) -> Void
+    #if !APPSTORE
+    @ObservedObject private var appState = AppState.shared
+    #endif
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -2740,6 +2743,10 @@ struct GitHubPulseCardView: View {
                         .font(.system(size: 11))
                         .foregroundColor(Color(hex: "#8E939C"))
                 }
+                #if !APPSTORE
+                Spacer(minLength: 4)
+                pullRequestsButton
+                #endif
             }
             .padding(.top, 6)
             .padding(.leading, 108)
@@ -2805,6 +2812,32 @@ struct GitHubPulseCardView: View {
         if n >= 1000 { return String(format: "%.1fk", Double(n) / 1000) }
         return "\(n)"
     }
+
+    #if !APPSTORE
+    /// "3 new" in orange while the GitHub inbox has unread pull requests, "Review" otherwise:
+    /// opens the Pull requests page of the Coucou window.
+    private var pullRequestsButton: some View {
+        let unread = appState.githubUnreadPRs
+        return Button {
+            NotificationCenter.default.post(name: .islandCollapse, object: nil)
+            FlowHubController.shared.show(.pullRequests)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.pull")
+                    .font(.system(size: 9, weight: .semibold))
+                Text(unread > 0 ? "\(unread) new" : "Review")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .monospacedDigit()
+            }
+            .foregroundColor(unread > 0 ? Color(hex: "#170C04") : Color(hex: "#C5C8CD"))
+            .padding(.horizontal, 7)
+            .frame(height: 18)
+            .background(Capsule().fill(unread > 0 ? Color(hex: "#FB923C") : Color.white.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+        .help("Open the Pull requests page")
+    }
+    #endif
 }
 
 private struct GitHubStatRow: View {

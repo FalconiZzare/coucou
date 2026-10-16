@@ -61,7 +61,7 @@ struct HubPullRequestsPage: View {
                                                  readOnly: tokenAccess.access == .readOnly)
                                 .id(pr.id)
                         } else {
-                            Text(inbox.loading ? "Loading pull requests…" : "No pull request open")
+                            Text(inbox.loading ? "Loading pull requests…" : "No pull request")
                                 .font(.system(size: 13))
                                 .foregroundColor(HubTheme.secondary)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -75,7 +75,7 @@ struct HubPullRequestsPage: View {
     }
 
     private var subtitle: String {
-        inbox.login.isEmpty ? "Every open pull request you can see, its diff, and your review."
+        inbox.login.isEmpty ? "Your GitHub inbox's pull requests, their diff, and your review."
                             : "Reviewing as \(inbox.login)."
     }
 
@@ -84,7 +84,10 @@ struct HubPullRequestsPage: View {
         return inbox.prs.filter { pr in
             switch filter {
             case .all: break
-            case .requested: guard pr.requestedReviewers.contains(inbox.login) else { return false }
+            case .open: guard pr.isOpen else { return false }
+            // GitHub's inbox says so for a request to a team the account is in, too.
+            case .requested:
+                guard pr.reason == "review_requested" || pr.requestedReviewers.contains(inbox.login) else { return false }
             case .yours: guard pr.author == inbox.login else { return false }
             }
             guard !query.isEmpty else { return true }
@@ -107,7 +110,7 @@ struct HubPullRequestsPage: View {
                     HubFilterChip(title: f.title, selected: filter == f) { filter = f }
                 }
             }
-            if let error = inbox.error {
+            if let error = inbox.error ?? inbox.note {
                 Text(error)
                     .font(.system(size: 12))
                     .foregroundColor(HubTheme.accent)
@@ -116,10 +119,14 @@ struct HubPullRequestsPage: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(filtered) { pr in
-                        HubPullRequestRow(pr: pr, selected: pr.id == shown?.id) { selected = pr.id }
+                        // Read once picked, not when the page happens to show it first.
+                        HubPullRequestRow(pr: pr, selected: pr.id == shown?.id) {
+                            selected = pr.id
+                            inbox.markRead(pr)
+                        }
                     }
                     if filtered.isEmpty && !inbox.loading {
-                        Text(inbox.prs.isEmpty ? "No pull request open" : "Nothing matches")
+                        Text(inbox.prs.isEmpty ? "No pull request" : "Nothing matches")
                             .font(.system(size: 12))
                             .foregroundColor(HubTheme.secondary)
                             .padding(.top, 8)
@@ -134,11 +141,12 @@ struct HubPullRequestsPage: View {
 }
 
 private enum PRFilter: String, CaseIterable, Identifiable {
-    case all, requested, yours
+    case all, open, requested, yours
     var id: String { rawValue }
     var title: String {
         switch self {
         case .all:       return "All"
+        case .open:      return "Open"
         case .requested: return "Review requested"
         case .yours:     return "Yours"
         }
@@ -173,11 +181,17 @@ private struct HubPullRequestRow: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(pr.title)
-                    .font(.system(size: 13.5, weight: selected ? .semibold : .regular))
-                    .foregroundColor(selected ? HubTheme.text : Color(hex: "#D5D7DB"))
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    // Unread in GitHub's inbox, as its mobile app marks it.
+                    if pr.unread {
+                        Circle().fill(HubTheme.accent).frame(width: 7, height: 7)
+                    }
+                    Text(pr.title)
+                        .font(.system(size: 13.5, weight: selected || pr.unread ? .semibold : .regular))
+                        .foregroundColor(selected ? HubTheme.text : Color(hex: "#D5D7DB"))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
                 HStack(spacing: 6) {
                     Text("\(pr.id) · \(pr.author)")
                         .font(.system(size: 11.5))
@@ -199,7 +213,7 @@ private struct HubPullRequestRow: View {
     }
 }
 
-/// "Draft", "Approved", "Changes requested": where the pull request stands.
+/// "Merged", "Closed", "Draft", "Approved", "Changes requested": where the pull request stands.
 private struct HubReviewBadge: View {
     let pr: ReviewPR
 
@@ -215,6 +229,9 @@ private struct HubReviewBadge: View {
     }
 
     private var badge: (text: String, color: Color)? {
+        // GitHub's colours for a merged and a closed pull request.
+        if pr.state == "MERGED" { return ("Merged", Color(hex: "#A371F7")) }
+        if pr.state == "CLOSED" { return ("Closed", HubTheme.red) }
         if pr.isDraft { return ("Draft", HubTheme.muted) }
         switch pr.review {
         case .approved:         return ("Approved", HubTheme.green)
@@ -324,10 +341,10 @@ private struct HubPullRequestDetail: View {
             HStack(spacing: 8) {
                 Button(sending == .approve ? "Approving…" : "Approve") { send(.approve) }
                     .buttonStyle(HubButtonStyle(primary: true))
-                    .disabled(sending != nil || readOnly || isOwn)
+                    .disabled(sending != nil || readOnly || isOwn || !pr.isOpen)
                 Button("Request changes") { send(.requestChanges) }
                     .buttonStyle(HubButtonStyle())
-                    .disabled(sending != nil || readOnly || isOwn || trimmed.isEmpty)
+                    .disabled(sending != nil || readOnly || isOwn || !pr.isOpen || trimmed.isEmpty)
                 Button("Comment") { send(.comment) }
                     .buttonStyle(HubButtonStyle())
                     .disabled(sending != nil || readOnly || trimmed.isEmpty)
@@ -339,7 +356,12 @@ private struct HubPullRequestDetail: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            if isOwn {
+            if !pr.isOpen {
+                Text("This pull request is \(pr.state == "MERGED" ? "merged" : "closed"): GitHub only takes comments on it now.")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(HubTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if isOwn {
                 Text("\(reviewer) opened this pull request, and GitHub doesn't let an account approve its own. To approve it here, put another account's token in Settings → Integrations → GitHub.")
                     .font(.system(size: 11.5))
                     .foregroundColor(HubTheme.secondary)
