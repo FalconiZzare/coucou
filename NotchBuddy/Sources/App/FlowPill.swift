@@ -113,7 +113,8 @@ private extension Array {
 /// pill; under the pointer it opens into Mochi and three buttons (dictate, record a call, open
 /// Coucou), each with its bubble. When you speak it opens into Mochi and nine dots rising and
 /// falling with the graves and the aigus of the voice. Messages (a paste that could not happen, a
-/// call's notes ready) grow above it, with a button to act.
+/// call's notes ready) grow above it, with a button to act. On the left or right edge it is a black
+/// notch welded to the screen's edge, its ends flaring into it, with everything in it stacked.
 struct FlowPillView: View {
     @ObservedObject var model: FlowPillModel
     let bands: FlowAudioBands
@@ -123,6 +124,18 @@ struct FlowPillView: View {
     static let restingLength: CGFloat = 44
     static let restingThickness: CGFloat = 8
     static let openThickness: CGFloat = 34
+
+    /// The notch on a side edge: how deep it is, how long its straight part is, how far its ends
+    /// flare along the edge, and the corners on its inner side. Resting, then open.
+    static let sideRestingDepth: CGFloat = 12
+    static let sideRestingBody: CGFloat = 46
+    static let sideRestingFlare: CGFloat = 10
+    static let sideRestingCorner: CGFloat = 6
+    static let sideOpenDepth: CGFloat = 60
+    static let sideOpenFlare: CGFloat = 20
+    static let sideOpenCorner: CGFloat = 22
+    /// How the notch grows and shrinks.
+    static let sideSpring = Animation.spring(response: 0.38, dampingFraction: 0.78)
 
     /// What the capsule shows, from the most to the least important.
     enum Look: Equatable {
@@ -155,16 +168,16 @@ struct FlowPillView: View {
                     capsule
                 }
             case .left:
-                HStack(spacing: 8) {
-                    capsule
+                HStack(spacing: 6) {
+                    sideNotch
                     bubble
                     Spacer(minLength: 0)
                 }
             case .right:
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Spacer(minLength: 0)
                     bubble
-                    capsule
+                    sideNotch
                 }
             }
         }
@@ -197,11 +210,21 @@ struct FlowPillView: View {
 
     @ViewBuilder private var bubble: some View {
         if let announcement = model.announcement {
-            FlowAnnouncementView(announcement: announcement,
+            FlowAnnouncementView(announcement: announcement, edge: model.edge,
                                  act: { model.announcementAction?() },
                                  dismiss: { model.dismissAnnouncement?() })
                 .transition(.scale(scale: 0.6, anchor: bubbleAnchor).combined(with: .opacity))
-        } else if let text = model.tooltip ?? (vertical ? messageText : nil) {
+        } else if vertical, let text = model.tooltip ?? messageText {
+            // On the sides, a black card pointing at the notch.
+            FlowSideCard(edge: model.edge, corner: 18) {
+                Text(text)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+            }
+            .transition(.scale(scale: 0.8, anchor: bubbleAnchor).combined(with: .opacity))
+        } else if let text = model.tooltip {
             Text(text)
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundColor(.white)
@@ -214,17 +237,15 @@ struct FlowPillView: View {
         }
     }
 
-    // MARK: The capsule
+    // MARK: The capsule (along the bottom)
 
-    /// How long the open pill is, along its edge, for what it shows.
+    /// How long the open pill is, along the bottom, for what it shows.
     private var openLength: CGFloat {
         switch look {
         case .toolbar:   return 150
-        case .note:      return vertical ? 128 : (model.noteHours ? 152 : 136)
+        case .note:      return model.noteHours ? 152 : 136
         case .handsFree: return 158
-        case .message:
-            if vertical { return 76 }
-            return Self.messageWidth(messageText ?? "")
+        case .message:   return Self.messageWidth(messageText ?? "")
         default:         return 118
         }
     }
@@ -251,27 +272,18 @@ struct FlowPillView: View {
                 .scaleEffect(open ? 1 : 0.5)
                 .animation(open ? .easeOut(duration: 0.2).delay(0.07) : .easeIn(duration: 0.1), value: open)
         }
-        .frame(width: vertical ? thickness : length, height: vertical ? length : thickness)
+        .frame(width: length, height: thickness)
         .clipShape(Capsule())          // the content stays inside while the pill opens
         .shadow(color: .black.opacity(open ? 0.35 : 0), radius: open ? 10 : 0, y: open ? 4 : 0)
         .animation(.spring(response: 0.36, dampingFraction: 0.74), value: look)
-        .padding(model.edge == .bottom ? .bottom : (model.edge == .left ? .leading : .trailing), 2)
-    }
-
-    /// The pieces of the pill, in a row along the bottom, in a column on the sides.
-    @ViewBuilder private func line<Content: View>(spacing: CGFloat, @ViewBuilder _ pieces: () -> Content) -> some View {
-        if vertical {
-            VStack(spacing: spacing) { pieces() }
-        } else {
-            HStack(spacing: spacing) { pieces() }
-        }
+        .padding(.bottom, 2)
     }
 
     @ViewBuilder private var content: some View {
         switch look {
         case .toolbar:
-            line(spacing: 4) {
-                mochi.padding(vertical ? .bottom : .trailing, 5)
+            HStack(spacing: 4) {
+                mochi.padding(.trailing, 5)
                 PillButton(symbol: "mic.fill", tip: String(format: String(localized: "flow.tip.dictate %@"), model.keyLabel),
                            model: model) { model.dictate?() }
                 PillButton(symbol: "record.circle", tip: String(localized: "flow.tip.note"), model: model) {
@@ -279,30 +291,21 @@ struct FlowPillView: View {
                 }
                 PillButton(symbol: "macwindow", tip: String(localized: "flow.tip.hub"), model: model) { model.openHub?() }
             }
-            .padding(vertical ? .vertical : .horizontal, 10)
+            .padding(.horizontal, 10)
             .fixedSize()
         case .handsFree:
-            line(spacing: 9) {
+            HStack(spacing: 9) {
                 PillButton(symbol: "xmark", tip: String(localized: "flow.tip.cancel"), model: model, small: true) {
                     model.cancelDictation?()
                 }
-                dots
+                bars
                 PillButton(symbol: "checkmark", tip: String(format: String(localized: "flow.tip.finish %@"), model.keyLabel),
                            model: model, small: true, filled: true) { model.finishDictation?() }
             }
-            .padding(vertical ? .vertical : .horizontal, 6)
-            .fixedSize()
-        case .message where vertical:
-            line(spacing: 9) {
-                mochi
-                Image(systemName: model.phase == .failed ? "mic.slash.fill" : "doc.on.clipboard.fill")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(Color(hex: "#E8E9EC"))
-            }
-            .padding(.vertical, 13)
+            .padding(.horizontal, 6)
             .fixedSize()
         default:
-            line(spacing: vertical ? 7 : 9) {
+            HStack(spacing: 9) {
                 mochi
                 switch model.phase {
                 case .copied, .failed, .pastedAgain:
@@ -313,38 +316,40 @@ struct FlowPillView: View {
                 case .idle:
                     noteContent
                 default:
-                    dots
+                    bars
                 }
             }
-            .padding(vertical ? .vertical : .horizontal, vertical ? 10 : 13)
+            .padding(.horizontal, 13)
             .fixedSize()
         }
     }
 
     /// Mochi, drawn by the same engine as the compact island's mini Mochis: his eyes wander all
-    /// around while you speak. 22 pt wide like a pill's Mochi (the canvas is larger, as there).
-    private var mochi: some View {
+    /// around while you speak. 22 pt wide like a pill's Mochi (the canvas is larger, as there),
+    /// a little larger in the side notch.
+    private func mochi(_ width: CGFloat) -> some View {
         // Still while only a recorded call shows: the pill costs nothing during a long call.
         FlowMochiView(active: model.phase != .idle || model.hovered)
-            .frame(width: 22 / 0.6, height: 22 / 0.6)
-            .frame(width: 22, height: 22, alignment: .center)
+            .frame(width: width / 0.6, height: width / 0.6)
+            .frame(width: width, height: width, alignment: .center)
     }
+
+    private var mochi: some View { mochi(22) }
 
     /// A call being recorded: a red dot, the time, and a button to stop.
     @ViewBuilder private var noteContent: some View {
         if let start = model.noteStartedAt {
-            line(spacing: vertical ? 6 : 8) {
+            HStack(spacing: 8) {
                 Circle()
                     .fill(Color(hex: "#FF453A"))
                     .frame(width: 8, height: 8)
                     .shadow(color: Color(hex: "#FF453A").opacity(0.6), radius: 3)
                 TimelineView(.periodic(from: start, by: 1)) { context in
                     Text(NoteBuilder.clock(context.date.timeIntervalSince(start)))
-                        .font(.system(size: vertical ? 10 : 12, weight: .semibold).monospacedDigit())
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
                         .foregroundColor(Color(hex: "#E8E9EC"))
                         .lineLimit(1)
                         .minimumScaleFactor(0.6)
-                        .frame(maxWidth: vertical ? 30 : nil)
                 }
                 Button { model.stopNote?() } label: {
                     RoundedRectangle(cornerRadius: 2)
@@ -359,20 +364,7 @@ struct FlowPillView: View {
         }
     }
 
-    /// Nine dots, graves to aigus: across the pill along the bottom, down it on the sides.
-    @ViewBuilder private var dots: some View {
-        if vertical {
-            bars
-                .frame(width: Self.barsLength, height: 22)
-                .rotationEffect(.degrees(90))
-                .frame(width: 22, height: Self.barsLength)
-        } else {
-            bars
-        }
-    }
-
-    static let barsLength: CGFloat = CGFloat(FlowBands.count) * 3.4 + CGFloat(FlowBands.count - 1) * 3.2
-
+    /// Nine dots, graves to aigus, across the pill.
     private var bars: some View {
         let active = model.phase == .listening || model.phase == .locked || model.phase == .thinking
         return TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !active)) { context in
@@ -389,26 +381,282 @@ struct FlowPillView: View {
             .frame(height: 22)
         }
     }
+
+    // MARK: The notch (on the left or right edge)
+
+    /// How long the open notch's straight part is, along the edge, for what it shows.
+    private var sideBodyLength: CGFloat {
+        switch look {
+        case .toolbar:   return 200
+        case .note:      return 150
+        case .handsFree: return 176
+        case .message:   return 88
+        default:         return 134
+        }
+    }
+
+    /// Black, flush with the screen's edge, its ends flaring into it. Resting it is a small handle;
+    /// open it grows, on a spring, around Mochi and the buttons stacked in it.
+    private var sideNotch: some View {
+        let left = model.edge == .left
+        let depth = open ? Self.sideOpenDepth : Self.sideRestingDepth
+        let flare = open ? Self.sideOpenFlare : Self.sideRestingFlare
+        let corner = open ? Self.sideOpenCorner : Self.sideRestingCorner
+        let length = (open ? sideBodyLength : Self.sideRestingBody) + 2 * flare
+        let shape = FlowSideNotchShape(left: left, flare: flare, corner: corner)
+        let outline = FlowSideNotchShape(left: left, flare: flare, corner: corner, outlineOnly: true)
+        return ZStack {
+            shape.fill(Color.black)
+            // A hairline on the inner side only (half of it is clipped away), so the black notch
+            // still shows against a dark screen.
+            outline.stroke(Color.white.opacity(open ? 0.14 : 0.24), lineWidth: 2)
+            outline.stroke(Color(hex: "#F97316").opacity(look == .handsFree ? 0.85 : 0), lineWidth: 3)
+            sideContent
+                .opacity(open ? 1 : 0)
+                .scaleEffect(open ? 1 : 0.5)
+                .animation(open ? .easeOut(duration: 0.2).delay(0.07) : .easeIn(duration: 0.1), value: open)
+        }
+        .frame(width: depth, height: length)
+        .clipShape(shape)              // the content stays inside while the notch opens
+        .shadow(color: .black.opacity(open ? 0.35 : 0), radius: open ? 10 : 0)
+        .animation(Self.sideSpring, value: look)
+    }
+
+    @ViewBuilder private var sideContent: some View {
+        switch look {
+        case .toolbar:
+            VStack(spacing: 8) {
+                mochi(30).padding(.bottom, 6)
+                PillButton(symbol: "mic.fill", tip: String(format: String(localized: "flow.tip.dictate %@"), model.keyLabel),
+                           model: model, ringed: true) { model.dictate?() }
+                PillButton(symbol: "record.circle", tip: String(localized: "flow.tip.note"), model: model, ringed: true) {
+                    model.toggleNote?()
+                }
+                PillButton(symbol: "macwindow", tip: String(localized: "flow.tip.hub"), model: model, ringed: true) {
+                    model.openHub?()
+                }
+            }
+            .fixedSize()
+        case .handsFree:
+            VStack(spacing: 12) {
+                PillButton(symbol: "xmark", tip: String(localized: "flow.tip.cancel"), model: model, small: true, ringed: true) {
+                    model.cancelDictation?()
+                }
+                meter
+                PillButton(symbol: "checkmark", tip: String(format: String(localized: "flow.tip.finish %@"), model.keyLabel),
+                           model: model, small: true, filled: true, ringed: true) { model.finishDictation?() }
+            }
+            .fixedSize()
+        case .message:
+            VStack(spacing: 12) {
+                mochi(30)
+                Image(systemName: model.phase == .failed ? "mic.slash.fill" : "doc.on.clipboard.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(Color(hex: "#E8E9EC"))
+            }
+            .fixedSize()
+        default:
+            VStack(spacing: 12) {
+                mochi(30)
+                if model.phase == .idle { sideNoteContent } else { meter }
+            }
+            .fixedSize()
+        }
+    }
+
+    /// A call being recorded, stacked: a red dot, the time, and a ringed button to stop.
+    @ViewBuilder private var sideNoteContent: some View {
+        if let start = model.noteStartedAt {
+            VStack(spacing: 9) {
+                Circle()
+                    .fill(Color(hex: "#FF453A"))
+                    .frame(width: 8, height: 8)
+                    .shadow(color: Color(hex: "#FF453A").opacity(0.6), radius: 3)
+                TimelineView(.periodic(from: start, by: 1)) { context in
+                    Text(NoteBuilder.clock(context.date.timeIntervalSince(start)))
+                        .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                        .foregroundColor(Color(hex: "#E8E9EC"))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                        .frame(maxWidth: 46)
+                }
+                FlowStopButton { model.stopNote?() }
+            }
+        }
+    }
+
+    /// Nine bars, graves at the top to aigus at the bottom, each reaching out with the voice.
+    private var meter: some View {
+        let active = model.phase == .listening || model.phase == .locked || model.phase == .thinking
+        return TimelineView(.animation(minimumInterval: 1.0 / 60, paused: !active)) { context in
+            let levels = smoother.frame(at: context.date,
+                                        target: model.phase == .thinking ? nil : bands.levels,
+                                        thinking: model.phase == .thinking)
+            VStack(alignment: .center, spacing: 3) {
+                ForEach(0..<FlowBands.count, id: \.self) { i in
+                    Capsule()
+                        .fill(Color.white.opacity(0.94))
+                        .frame(width: 4 + 26 * CGFloat(levels[i]), height: 4)
+                }
+            }
+            .frame(width: 30)
+        }
+    }
 }
 
-/// A round button of the pill, with its bubble above while the pointer is on it.
+/// The notch on a side edge: welded to the screen's edge, with inverse rounded corners at both
+/// ends that flare back out into the edge, so it reads as part of the bezel rather than a panel.
+/// Drawn for the right edge (the screen's edge at `maxX`) and mirrored for the left. The flare and
+/// corner maths are adapted from codenotch's SideNotchShape (MIT, Copyright 2026 Vinz).
+struct FlowSideNotchShape: Shape {
+    var left = false
+    /// How far each end flares along the edge.
+    var flare: CGFloat
+    /// The rounded corners on the inner side.
+    var corner: CGFloat
+    /// Leaves out the line along the screen's edge, for a stroke on the inner side only.
+    var outlineOnly = false
+
+    var animatableData: AnimatablePair<CGFloat, CGFloat> {
+        get { AnimatablePair(flare, corner) }
+        set { flare = newValue.first; corner = newValue.second }
+    }
+
+    /// The handle reach that makes a cubic trace a quarter circle.
+    private static let circleReach: CGFloat = 0.5523
+
+    func path(in rect: CGRect) -> Path {
+        let depth = rect.width, length = rect.height
+        // The corner is claimed first, out of half the depth, and the flare takes what is left:
+        // the other way round, a shallow resting notch would come out with square corners.
+        let c = max(0, min(corner, depth / 2, length / 4))
+        let along = max(0, min(flare, (length - 2 * c) / 2))
+        let across = max(0, min(flare, depth - c))
+        var path = Path()
+        path.move(to: CGPoint(x: depth, y: 0))
+        // Flare in from the edge onto the top of the notch.
+        turn(&path, to: CGPoint(x: depth - across, y: along), leaving: CGVector(dx: 0, dy: 1), arriving: CGVector(dx: -1, dy: 0))
+        path.addLine(to: CGPoint(x: c, y: along))
+        turn(&path, to: CGPoint(x: 0, y: along + c), leaving: CGVector(dx: -1, dy: 0), arriving: CGVector(dx: 0, dy: 1))
+        path.addLine(to: CGPoint(x: 0, y: length - along - c))
+        turn(&path, to: CGPoint(x: c, y: length - along), leaving: CGVector(dx: 0, dy: 1), arriving: CGVector(dx: 1, dy: 0))
+        path.addLine(to: CGPoint(x: depth - across, y: length - along))
+        // And back out to the edge.
+        turn(&path, to: CGPoint(x: depth, y: length), leaving: CGVector(dx: 1, dy: 0), arriving: CGVector(dx: 0, dy: 1))
+        if !outlineOnly { path.closeSubpath() }
+        let mirror = left ? CGAffineTransform(a: -1, b: 0, c: 0, d: 1, tx: depth, ty: 0) : .identity
+        return path.applying(mirror).applying(CGAffineTransform(translationX: rect.minX, y: rect.minY))
+    }
+
+    /// A quarter turn from the current point, leaving along `leaving` and arriving along `arriving`:
+    /// a quarter circle when both distances match, a quarter ellipse when they do not.
+    private func turn(_ path: inout Path, to: CGPoint, leaving: CGVector, arriving: CGVector) {
+        guard let from = path.currentPoint else { return }
+        let out = abs((to.x - from.x) * leaving.dx + (to.y - from.y) * leaving.dy)
+        let into = abs((to.x - from.x) * arriving.dx + (to.y - from.y) * arriving.dy)
+        guard out > 0.001, into > 0.001 else {
+            path.addLine(to: to)
+            return
+        }
+        let k = Self.circleReach
+        path.addCurve(to: to,
+                      control1: CGPoint(x: from.x + leaving.dx * out * k, y: from.y + leaving.dy * out * k),
+                      control2: CGPoint(x: to.x - arriving.dx * into * k, y: to.y - arriving.dy * into * k))
+    }
+}
+
+/// A black card beside the side notch, with a small pointer aiming at it, card and pointer one
+/// outline. The pointer's curves are adapted from codenotch's TooltipTail (MIT, Copyright 2026 Vinz).
+struct FlowSideCardShape: Shape {
+    /// The notch is on the right: the pointer is on the card's right side.
+    var pointsRight: Bool
+    var corner: CGFloat
+
+    static let tailLength: CGFloat = 9
+    static let tailHeight: CGFloat = 18
+
+    func path(in rect: CGRect) -> Path {
+        let l = Self.tailLength
+        let card = CGRect(x: pointsRight ? rect.minX : rect.minX + l, y: rect.minY,
+                          width: max(0, rect.width - l), height: rect.height)
+        let body = Path(roundedRect: card, cornerRadius: min(corner, card.height / 2, card.width / 2), style: .continuous)
+        // The pointer's base sits a little inside the card, so it meets the card's edge even where
+        // the card is rounding off. Its shoulders leave the base along the card's edge.
+        let h = min(Self.tailHeight, card.height)
+        let inset: CGFloat = 6
+        let sign: CGFloat = pointsRight ? 1 : -1
+        let baseX = pointsRight ? card.maxX - inset : card.minX + inset
+        let tipX = pointsRight ? rect.maxX : rect.minX
+        let w = abs(tipX - baseX)
+        let mid = rect.midY
+        var tail = Path()
+        tail.move(to: CGPoint(x: baseX, y: mid - h / 2))
+        tail.addCurve(to: CGPoint(x: tipX, y: mid),
+                      control1: CGPoint(x: baseX, y: mid - h / 4),
+                      control2: CGPoint(x: tipX - sign * w * 0.42, y: mid - h * 0.12))
+        tail.addCurve(to: CGPoint(x: baseX, y: mid + h / 2),
+                      control1: CGPoint(x: tipX - sign * w * 0.42, y: mid + h * 0.12),
+                      control2: CGPoint(x: baseX, y: mid + h / 4))
+        tail.closeSubpath()
+        return body.union(tail)
+    }
+}
+
+/// The black card that holds a bubble beside the side notch.
+private struct FlowSideCard<Content: View>: View {
+    let edge: FlowPillEdge
+    let corner: CGFloat
+    let content: Content
+
+    init(edge: FlowPillEdge, corner: CGFloat, @ViewBuilder content: () -> Content) {
+        self.edge = edge
+        self.corner = corner
+        self.content = content()
+    }
+
+    var body: some View {
+        let shape = FlowSideCardShape(pointsRight: edge == .right, corner: corner)
+        content
+            .padding(edge == .right ? .trailing : .leading, FlowSideCardShape.tailLength)
+            .background(shape.fill(Color.black))
+            .overlay(shape.stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
+            .fixedSize()
+    }
+}
+
+/// A round button of the pill, with its bubble above while the pointer is on it. In the side
+/// notch it is larger, with a thin ring that brightens under the pointer.
 private struct PillButton: View {
     let symbol: String
     let tip: String
     @ObservedObject var model: FlowPillModel
     var small = false
     var filled = false
+    var ringed = false
     let action: () -> Void
     @State private var hover = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: small ? 10 : 12, weight: .bold))
-                .foregroundColor(filled ? .black : .white)
-                .frame(width: small ? 24 : 28, height: small ? 24 : 28)
-                .background(Circle().fill(filled ? Color.white : Color.white.opacity(hover ? 0.22 : 0.10)))
-                .contentShape(Circle())
+            if ringed {
+                let side: CGFloat = small ? 32 : 36
+                Image(systemName: symbol)
+                    .font(.system(size: small ? 12 : 14, weight: .bold))
+                    .foregroundColor(filled ? .black : .white)
+                    .frame(width: side, height: side)
+                    .background(Circle().fill(filled ? Color.white : Color.white.opacity(hover ? 0.16 : 0.06)))
+                    .overlay(Circle().strokeBorder(Color.white.opacity(filled ? 0 : (hover ? 0.55 : 0.2)), lineWidth: 2))
+                    .contentShape(Circle())
+                    .animation(.easeOut(duration: 0.12), value: hover)
+            } else {
+                Image(systemName: symbol)
+                    .font(.system(size: small ? 10 : 12, weight: .bold))
+                    .foregroundColor(filled ? .black : .white)
+                    .frame(width: small ? 24 : 28, height: small ? 24 : 28)
+                    .background(Circle().fill(filled ? Color.white : Color.white.opacity(hover ? 0.22 : 0.10)))
+                    .contentShape(Circle())
+            }
         }
         .buttonStyle(.plain)
         .accessibilityLabel(tip)
@@ -419,13 +667,49 @@ private struct PillButton: View {
     }
 }
 
-/// The message above the pill: a symbol, the words, a button to act and one to close.
+/// The side notch's button to stop a recorded call: ringed like the others, with its help text.
+private struct FlowStopButton: View {
+    let action: () -> Void
+    @State private var hover = false
+
+    var body: some View {
+        Button(action: action) {
+            RoundedRectangle(cornerRadius: 2.5)
+                .fill(Color.white)
+                .frame(width: 10, height: 10)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Color.white.opacity(hover ? 0.16 : 0.06)))
+                .overlay(Circle().strokeBorder(Color.white.opacity(hover ? 0.55 : 0.2), lineWidth: 2))
+                .contentShape(Circle())
+                .animation(.easeOut(duration: 0.12), value: hover)
+        }
+        .buttonStyle(.plain)
+        .help(String(localized: "notes.stop"))
+        .onHover { hover = $0 }
+    }
+}
+
+/// The message above the pill: a symbol, the words, a button to act and one to close. Beside the
+/// side notch, in a black card pointing at it.
 private struct FlowAnnouncementView: View {
     let announcement: FlowAnnouncement
+    let edge: FlowPillEdge
     let act: () -> Void
     let dismiss: () -> Void
 
     var body: some View {
+        if edge == .bottom {
+            row
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.95)))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
+                .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
+                .fixedSize()
+        } else {
+            FlowSideCard(edge: edge, corner: 20) { row }
+        }
+    }
+
+    private var row: some View {
         HStack(spacing: 12) {
             Image(systemName: announcement.symbol)
                 .font(.system(size: 15, weight: .semibold))
@@ -460,10 +744,6 @@ private struct FlowAnnouncementView: View {
         .padding(.leading, 16)
         .padding(.trailing, 10)
         .padding(.vertical, 10)
-        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.95)))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
-        .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
-        .fixedSize()
     }
 }
 
@@ -500,11 +780,12 @@ private struct FlowMochiView: View {
 /// every Space and over full-screen apps. It stays at the bottom centre of a screen while Flow
 /// dictation is on, and moves to the screen the mouse is on when you speak. It is taller than the
 /// pill, for the bubbles above it, and lets clicks through except where the pill and its bubble are.
+/// On a side edge it touches the screen's very edge, so the notch is welded to it.
 @MainActor
 final class FlowPillController {
     /// The panel: wide along the bottom (bubbles above the pill), tall on the sides (bubbles beside it).
     static func size(for edge: FlowPillEdge) -> NSSize {
-        edge == .bottom ? NSSize(width: 520, height: 170) : NSSize(width: 480, height: 320)
+        edge == .bottom ? NSSize(width: 520, height: 170) : NSSize(width: 560, height: 320)
     }
 
     private var size: NSSize { Self.size(for: model.edge) }
@@ -653,12 +934,12 @@ final class FlowPillController {
     /// The parts of the panel that take the pointer, in screen coordinates.
     private func hotRects(_ frame: NSRect) -> [NSRect] {
         let open = model.hovered || model.phase != .idle || model.noteStartedAt != nil
-        // The pill: a generous zone around the small resting one, the whole capsule once open.
-        let length: CGFloat = open ? 200 : 96
-        let thickness: CGFloat = open ? 46 : 26
         let bubble = model.announcement != nil || model.tooltip != nil
         switch model.edge {
         case .bottom:
+            // The pill: a generous zone around the small resting one, the whole capsule once open.
+            let length: CGFloat = open ? 200 : 96
+            let thickness: CGFloat = open ? 46 : 26
             var rects = [NSRect(x: frame.midX - length / 2, y: frame.minY, width: length, height: thickness)]
             if model.announcement != nil {
                 rects.append(NSRect(x: frame.midX - 240, y: frame.minY + 40, width: 480, height: 110))
@@ -667,13 +948,19 @@ final class FlowPillController {
             }
             return rects
         case .left, .right:
+            // The notch, flush with the screen's edge: a generous zone around the small resting
+            // one, the whole notch (flares included) once open.
             let left = model.edge == .left
-            let pillX = left ? frame.minX : frame.maxX - thickness
-            var rects = [NSRect(x: pillX, y: frame.midY - length / 2, width: thickness, height: length)]
+            let length: CGFloat = open ? 260 : 96
+            let depth: CGFloat = open ? 72 : 28
+            let notchX = left ? frame.minX : frame.maxX - depth
+            var rects = [NSRect(x: notchX, y: frame.midY - length / 2, width: depth, height: length)]
             if bubble {
-                let width: CGFloat = model.announcement != nil ? frame.width - 40 : 300
-                let height: CGFloat = model.announcement != nil ? 130 : 44
-                let x = left ? frame.minX + 40 : frame.maxX - 40 - width
+                // The bubble sits right beside the notch, whatever its size.
+                let inset: CGFloat = model.announcement != nil ? 14 : 62
+                let width: CGFloat = model.announcement != nil ? frame.width - inset : 300
+                let height: CGFloat = model.announcement != nil ? 130 : 48
+                let x = left ? frame.minX + inset : frame.maxX - inset - width
                 rects.append(NSRect(x: x, y: frame.midY - height / 2, width: width, height: height))
             }
             return rects
@@ -759,16 +1046,18 @@ final class FlowPillController {
         let screen = onMouseScreen
             ? (NSScreen.screens.first { NSMouseInRect(mouse, $0.frame, false) } ?? NSScreen.main)
             : (panel.screen ?? NSScreen.main)
-        guard let area = screen?.visibleFrame else { return }
+        guard let screen else { return }
+        let area = screen.visibleFrame
         let size = self.size
         switch model.edge {
         case .bottom:
             // Just above the Dock (or the bottom edge when the Dock hides).
             panel.setFrameOrigin(NSPoint(x: area.midX - size.width / 2, y: area.minY + 4))
         case .left:
-            panel.setFrameOrigin(NSPoint(x: area.minX + 4, y: area.midY - size.height / 2))
+            // Against the screen's very edge, so the notch is welded to it.
+            panel.setFrameOrigin(NSPoint(x: screen.frame.minX, y: area.midY - size.height / 2))
         case .right:
-            panel.setFrameOrigin(NSPoint(x: area.maxX - size.width - 4, y: area.midY - size.height / 2))
+            panel.setFrameOrigin(NSPoint(x: screen.frame.maxX - size.width, y: area.midY - size.height / 2))
         }
     }
 }
