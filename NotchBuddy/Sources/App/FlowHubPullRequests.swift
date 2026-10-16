@@ -2,11 +2,12 @@
 import AppKit
 import SwiftUI
 
-/// Coucou window → Pull requests: the open pull requests the reviewing account can see on the
-/// left, the one chosen on the right with its files and the review buttons.
+/// Coucou window → Pull requests: the open pull requests the GitHub token's account can see on
+/// the left, the one chosen on the right with its files and the review buttons.
 struct HubPullRequestsPage: View {
     @ObservedObject var router: HubRouter
     @ObservedObject private var inbox = PullRequestInbox.shared
+    @ObservedObject private var tokenAccess = GitHubTokenAccess.shared
     @State private var selected: String?
     @State private var filter: PRFilter = .all
     @State private var search = ""
@@ -22,7 +23,7 @@ struct HubPullRequestsPage: View {
                 HubCard {
                     Text("Add a GitHub token to review pull requests here.")
                         .font(.system(size: 13.5, weight: .medium))
-                    Text("Settings → Integrations → GitHub. A second account's token, in Review account, lets you approve your own pull requests.")
+                    Text("Settings → Integrations → GitHub. To approve your own pull requests, use the token of another account of yours: GitHub never lets an account approve its own.")
                         .font(.system(size: 12))
                         .foregroundColor(HubTheme.secondary)
                     Button("Open Integrations") { router.page = .integrations }
@@ -31,13 +32,33 @@ struct HubPullRequestsPage: View {
                 .padding(28)
                 Spacer(minLength: 0)
             } else {
+                if tokenAccess.access == .readOnly {
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: "lock")
+                            .font(.system(size: 12, weight: .semibold))
+                            .padding(.top, 1)
+                        Text(GitHubTokenAccess.readOnlyMessage)
+                            .font(.system(size: 12))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button("Change token") { router.page = .integrations }
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundColor(HubTheme.accent)
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(HubTheme.accent.opacity(0.1)))
+                    .padding(.horizontal, 28)
+                    .padding(.top, 12)
+                }
                 HStack(spacing: 0) {
                     list
                         .frame(width: 320)
                         .overlay(alignment: .trailing) { Rectangle().fill(Color.white.opacity(0.06)).frame(width: 1) }
                     Group {
                         if let pr = shown {
-                            HubPullRequestDetail(pr: pr, reviewer: inbox.login)
+                            HubPullRequestDetail(pr: pr, reviewer: inbox.login,
+                                                 readOnly: tokenAccess.access == .readOnly)
                                 .id(pr.id)
                         } else {
                             Text(inbox.loading ? "Loading pull requests…" : "No pull request open")
@@ -54,15 +75,9 @@ struct HubPullRequestsPage: View {
     }
 
     private var subtitle: String {
-        guard !inbox.login.isEmpty else { return "Every open pull request you can see, its diff, and your review." }
-        return GitHubReview.usesReviewAccount
-            ? "Reviewing as \(inbox.login), your review account."
-            : "Reviewing as \(inbox.login)."
+        inbox.login.isEmpty ? "Every open pull request you can see, its diff, and your review."
+                            : "Reviewing as \(inbox.login)."
     }
-
-    /// Your own login: the main token's account, which differs from the reviewer's once a
-    /// review account is set.
-    private var mainLogin: String { AppState.shared.githubPulse?.login ?? inbox.login }
 
     private var filtered: [ReviewPR] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
@@ -70,7 +85,7 @@ struct HubPullRequestsPage: View {
             switch filter {
             case .all: break
             case .requested: guard pr.requestedReviewers.contains(inbox.login) else { return false }
-            case .yours: guard pr.author == mainLogin else { return false }
+            case .yours: guard pr.author == inbox.login else { return false }
             }
             guard !query.isEmpty else { return true }
             return pr.title.lowercased().contains(query) || pr.id.lowercased().contains(query)
@@ -216,6 +231,8 @@ private struct HubPullRequestDetail: View {
     let pr: ReviewPR
     /// The reviewing account: GitHub refuses its approval on its own pull requests.
     let reviewer: String
+    /// The token may only read: the page says so above, and the buttons stay off.
+    let readOnly: Bool
 
     @State private var prBody = ""
     @State private var files: [ReviewFile] = []
@@ -307,13 +324,13 @@ private struct HubPullRequestDetail: View {
             HStack(spacing: 8) {
                 Button(sending == .approve ? "Approving…" : "Approve") { send(.approve) }
                     .buttonStyle(HubButtonStyle(primary: true))
-                    .disabled(sending != nil || isOwn)
+                    .disabled(sending != nil || readOnly || isOwn)
                 Button("Request changes") { send(.requestChanges) }
                     .buttonStyle(HubButtonStyle())
-                    .disabled(sending != nil || isOwn || trimmed.isEmpty)
+                    .disabled(sending != nil || readOnly || isOwn || trimmed.isEmpty)
                 Button("Comment") { send(.comment) }
                     .buttonStyle(HubButtonStyle())
-                    .disabled(sending != nil || trimmed.isEmpty)
+                    .disabled(sending != nil || readOnly || trimmed.isEmpty)
                 Spacer(minLength: 0)
                 if let result {
                     Text(result.text)
@@ -323,7 +340,7 @@ private struct HubPullRequestDetail: View {
                 }
             }
             if isOwn {
-                Text("\(reviewer) opened this pull request, and GitHub doesn't let an account approve its own. Add another account's token in Settings → Integrations → Review account.")
+                Text("\(reviewer) opened this pull request, and GitHub doesn't let an account approve its own. To approve it here, put another account's token in Settings → Integrations → GitHub.")
                     .font(.system(size: 11.5))
                     .foregroundColor(HubTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)

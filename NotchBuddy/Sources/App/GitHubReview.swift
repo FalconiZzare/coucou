@@ -3,10 +3,9 @@ import Foundation
 
 // MARK: - GitHubReview
 //
-// The pull requests page of the Coucou window: every open pull request the reviewing account
-// can see, their files, and the reviews it sends. The reviewing account is the one of
-// "github-review-token" when set (another account of yours, which may approve your own pull
-// requests), else the one of "github-token".
+// The pull requests page of the Coucou window: every open pull request the GitHub token's
+// account can see, their files, and the reviews it sends. To approve your own pull requests,
+// put the token of another account of yours: GitHub never lets an account approve its own.
 
 struct ReviewPR: Identifiable, Equatable {
     var repo: String          // "owner/name"
@@ -45,15 +44,13 @@ enum ReviewEvent: String {
 enum GitHubReview {
     struct Failure: LocalizedError {
         var message: String
+        var status = 0
+        /// GitHub refused a write because the token may only read.
+        var readOnly = false
         var errorDescription: String? { message }
     }
 
-    /// The token reviews go out with: the review account's, else the main one.
-    static var token: String? {
-        KeychainStore.shared.get("github-review-token") ?? KeychainStore.shared.get("github-token")
-    }
-
-    static var usesReviewAccount: Bool { KeychainStore.shared.get("github-review-token") != nil }
+    static var token: String? { KeychainStore.shared.get("github-token") }
 
     // MARK: Inbox
 
@@ -124,8 +121,14 @@ enum GitHubReview {
     static func submit(_ event: ReviewEvent, body: String, on pr: ReviewPR) async throws {
         var payload: [String: Any] = ["event": event.rawValue]
         if !body.isEmpty { payload["body"] = body }
-        _ = try await rest("https://api.github.com/repos/\(pr.repo)/pulls/\(pr.number)/reviews",
-                           method: "POST", body: payload)
+        do {
+            _ = try await rest("https://api.github.com/repos/\(pr.repo)/pulls/\(pr.number)/reviews",
+                               method: "POST", body: payload)
+            await GitHubTokenAccess.shared.noteWriteAccepted()
+        } catch let failure as Failure where failure.readOnly {
+            await GitHubTokenAccess.shared.noteWriteRefused()
+            throw failure
+        }
     }
 
     // MARK: HTTP
@@ -147,7 +150,10 @@ enum GitHubReview {
 
     private static func rest(_ url: String, method: String = "GET", body: [String: Any]? = nil) async throws -> Any? {
         let (data, response) = try await URLSession.shared.data(for: request(url, method: method, body: body))
-        let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let http = response as? HTTPURLResponse
+        let code = http?.statusCode ?? 0
+        let scopes = http?.value(forHTTPHeaderField: "X-OAuth-Scopes")
+        await GitHubTokenAccess.shared.noteScopes(scopes)
         let json = try? JSONSerialization.jsonObject(with: data)
         guard (200..<300).contains(code) else { throw failure(code: code, json: json) }
         return json
@@ -162,17 +168,17 @@ enum GitHubReview {
     /// for the usual permission errors.
     private static func failure(code: Int, json: Any?) -> Failure {
         let dict = json as? [String: Any]
-        var message = dict?["message"] as? String ?? "GitHub answered \(code)"
+        let raw = dict?["message"] as? String ?? ""
+        if GitHubTokenAccess.isReadOnlyRefusal(status: code, message: raw) {
+            return Failure(message: GitHubTokenAccess.readOnlyMessage, status: code, readOnly: true)
+        }
+        var message = raw.isEmpty ? "GitHub answered \(code)" : raw
         if let details = (dict?["errors"] as? [Any])?.compactMap({ ($0 as? String) ?? ($0 as? [String: Any])?["message"] as? String }),
            !details.isEmpty {
             message = details.joined(separator: " ")
         }
-        switch code {
-        case 401: return Failure(message: "GitHub refused the token. Check it in Settings → Integrations.")
-        case 403:
-            return Failure(message: "\(message). The token needs Pull requests: read and write (or a classic token with repo).")
-        default: return Failure(message: message)
-        }
+        if code == 401 { message = "GitHub refused the token. Check it in Settings → Integrations." }
+        return Failure(message: message, status: code)
     }
 
     private static let inboxQuery = """
