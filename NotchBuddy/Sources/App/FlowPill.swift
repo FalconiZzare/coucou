@@ -135,12 +135,16 @@ struct FlowPillView: View {
     /// Resting: codenotch's folded pill, about 9.8 by 79 pt, its 2 pt bleed included.
     nonisolated static let sideRestingDepth: CGFloat = 26 * sidePx
     nonisolated static let sideRestingLength: CGFloat = 210 * sidePx
-    /// Open: codenotch's body depth, about 70 pt.
-    nonisolated static let sideOpenDepth: CGFloat = 186 * sidePx
+    /// The open notch at half codenotch's size, which shows usage rings where Coucou only has a
+    /// few buttons. Its proportions stay codenotch's.
+    nonisolated static let sideOpenScale: CGFloat = 0.5
+    /// Open: codenotch's body depth (about 70 pt), scaled.
+    nonisolated static let sideOpenDepth: CGFloat = 186 * sidePx * sideOpenScale
     /// How far each end flares along the edge, and the corners on the inner side. The shape
-    /// clamps both to the depth it has, which is what makes the resting notch a slim bar.
-    nonisolated static let sideFlare: CGFloat = 103 * sidePx
-    nonisolated static let sideCorner: CGFloat = 78.8 * sidePx
+    /// clamps both to the depth it has, which is what makes the resting notch a slim bar (the
+    /// resting shape comes out the same at any scale).
+    nonisolated static let sideFlare: CGFloat = 103 * sidePx * sideOpenScale
+    nonisolated static let sideCorner: CGFloat = 78.8 * sidePx * sideOpenScale
     /// How far the notch runs past the screen's edge, so no line of wallpaper shows along it.
     nonisolated static let sideBleed: CGFloat = 2
     /// How the notch opens and folds, and how its contents follow (codenotch's unfold and contents).
@@ -402,13 +406,13 @@ struct FlowPillView: View {
 
     /// codenotch's cell grid down the notch: each cell a ring's size, the rings this far apart,
     /// padded from the body's ends by its padTop and padBottom.
-    nonisolated static let sideCell: CGFloat = 117 * sidePx
-    nonisolated static let sideCellSpacing: CGFloat = 83.5 * sidePx
-    nonisolated static let sidePadTop: CGFloat = 69.5 * sidePx
-    nonisolated static let sidePadBottom: CGFloat = 50.1 * sidePx
+    nonisolated static let sideCell: CGFloat = 117 * sidePx * sideOpenScale
+    nonisolated static let sideCellSpacing: CGFloat = 83.5 * sidePx * sideOpenScale
+    nonisolated static let sidePadTop: CGFloat = 69.5 * sidePx * sideOpenScale
+    nonisolated static let sidePadBottom: CGFloat = 50.1 * sidePx * sideOpenScale
     /// A ring's track and the glyph in it (codenotch's trackStroke and glyphSize).
-    nonisolated static let sideTrack: CGFloat = 15.5 * sidePx
-    nonisolated static let sideGlyph: CGFloat = 46 * sidePx
+    nonisolated static let sideTrack: CGFloat = 15.5 * sidePx * sideOpenScale
+    nonisolated static let sideGlyph: CGFloat = 46 * sidePx * sideOpenScale
     /// codenotch's palette: white ink, and its ring track, brighter under the pointer.
     nonisolated static let inkPrimary = Color.white
     nonisolated static let ringTrack = Color.white.opacity(0.188)
@@ -476,7 +480,7 @@ struct FlowPillView: View {
         content()
             .frame(width: Self.sideCell, height: Self.sideCell)
             .opacity(open ? 1 : 0)
-            .offset(x: open ? 0 : (model.edge == .left ? -1 : 1) * 28 * Self.sidePx)
+            .offset(x: open ? 0 : (model.edge == .left ? -1 : 1) * 28 * Self.sidePx * Self.sideOpenScale)
             .animation(Self.sideContentSpring.delay(min(Double(index) * 0.045, 0.18)), value: open)
     }
 
@@ -522,17 +526,20 @@ struct FlowPillView: View {
                 if let start = model.noteStartedAt {
                     // A call being recorded: a red dot over the time, then a ring to stop.
                     cell(1) {
-                        VStack(spacing: 6) {
+                        VStack(spacing: 3) {
                             Circle()
                                 .fill(Color(hex: "#FF453A"))
-                                .frame(width: 8, height: 8)
-                                .shadow(color: Color(hex: "#FF453A").opacity(0.6), radius: 3)
+                                .frame(width: 4, height: 4)
+                                .shadow(color: Color(hex: "#FF453A").opacity(0.6), radius: 1.5)
+                            // Kept readable rather than halved: it may use the notch's whole
+                            // depth, wider than its cell.
                             TimelineView(.periodic(from: start, by: 1)) { context in
                                 Text(NoteBuilder.clock(context.date.timeIntervalSince(start)))
-                                    .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                                    .font(.system(size: 8, weight: .semibold).monospacedDigit())
                                     .foregroundColor(Self.inkPrimary)
                                     .lineLimit(1)
-                                    .minimumScaleFactor(0.6)
+                                    .minimumScaleFactor(0.8)
+                                    .frame(width: Self.sideOpenDepth - 4)
                             }
                         }
                     }
@@ -554,11 +561,12 @@ struct FlowPillView: View {
             let levels = smoother.frame(at: context.date,
                                         target: model.phase == .thinking ? nil : bands.levels,
                                         thinking: model.phase == .thinking)
-            VStack(alignment: .center, spacing: 2) {
+            VStack(alignment: .center, spacing: 2 * Self.sideOpenScale) {
                 ForEach(0..<FlowBands.count, id: \.self) { i in
                     Capsule()
                         .fill(Self.inkPrimary.opacity(0.94))
-                        .frame(width: 4 + 36 * CGFloat(levels[i]), height: 3)
+                        .frame(width: (4 + 36 * CGFloat(levels[i])) * Self.sideOpenScale,
+                               height: 3 * Self.sideOpenScale)
                 }
             }
             .frame(width: Self.sideCell)
@@ -835,9 +843,9 @@ private struct FlowStopButton: View {
                 Circle().fill(Color.white.opacity(hover ? 0.08 : 0))
                 Circle().strokeBorder(hover ? FlowPillView.ringTrackHover : FlowPillView.ringTrack,
                                       lineWidth: FlowPillView.sideTrack)
-                RoundedRectangle(cornerRadius: 2.5)
+                RoundedRectangle(cornerRadius: 2.5 * FlowPillView.sideOpenScale)
                     .fill(FlowPillView.inkPrimary)
-                    .frame(width: 12, height: 12)
+                    .frame(width: 12 * FlowPillView.sideOpenScale, height: 12 * FlowPillView.sideOpenScale)
             }
             .frame(width: FlowPillView.sideCell, height: FlowPillView.sideCell)
             .contentShape(Circle())
