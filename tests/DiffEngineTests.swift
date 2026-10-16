@@ -28,6 +28,33 @@ enum DiffEngineTests {
             checkTrue("name == b.swift", d.name == "b.swift")
         }
 
+        // ── DiffEngine.fromPatch — a GitHub pull request file ─────────────────
+        print("DiffEngine.fromPatch")
+        do {
+            let patch = "@@ -28,6 +28,7 @@ final class AppDelegate {\n         #endif\n         setupMenuBarItem()\n-        old()\n+        new()\n+        MachineVitals.shared.start()\n         #if !APPSTORE\n\\ No newline at end of file\n@@ -90 +91 @@\n-a\n+b"
+            let d = DiffEngine.fromPatch(patch, path: "NotchBuddy/AppDelegate.swift", added: 3, removed: 2)
+            checkTrue("2 hunks", d.hunks.count == 2)
+            checkTrue("!tooLarge", !d.tooLarge)
+            checkInt("added from GitHub", d.added, 3)
+            checkInt("hunk 1 lines", d.hunks[0].lines.count, 6)
+            checkInt("hunk 1 starts", d.hunks[0].newStart, 28)
+            checkTrue("context first", d.hunks[0].lines[0].kind == .context && d.hunks[0].lines[0].text == "        #endif")
+            checkTrue("removed line numbered in the old file",
+                d.hunks[0].lines[2].kind == .removed && d.hunks[0].lines[2].origLine == 30)
+            checkTrue("added lines numbered in the new file",
+                d.hunks[0].lines[3].newLine == 30 && d.hunks[0].lines[4].newLine == 31)
+            checkTrue("context after adds counts both files",
+                d.hunks[0].lines[5].origLine == 31 && d.hunks[0].lines[5].newLine == 32)
+            checkTrue("no-newline marker skipped", !d.hunks[0].lines.contains { $0.text.contains("No newline") })
+            checkTrue("hunk without counts", d.hunks[1].origStart == 90 && d.hunks[1].newStart == 91)
+            checkTrue("name", d.name == "AppDelegate.swift")
+
+            let binary = DiffEngine.fromPatch(nil, path: "logo.png", added: 0, removed: 0)
+            checkTrue("no patch → tooLarge", binary.tooLarge && binary.hunks.isEmpty)
+            let newFile = DiffEngine.fromPatch("@@ -0,0 +1,2 @@\n+a\n+b", path: "x", added: 2, removed: 0)
+            checkTrue("new file starts at line 1", newFile.hunks[0].lines[0].newLine == 1)
+        }
+
         // ── DiffEngine.fromEdit — removals ────────────────────────────────────
         print("DiffEngine.fromEdit — removals")
         do {
