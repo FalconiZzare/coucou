@@ -1,80 +1,30 @@
 <div align="center">
-    <img src="NotchBuddy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="96" alt="Coucou icon">
-    <h1>【 Coucou 】</h1>
-    <h3>A tiny friend in your notch that keeps an eye on your AI coding agents</h3>
+
+<img src="NotchBuddy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png" width="96" alt="Coucou icon">
+
+# Coucou
+
+**A tiny friend that lives in your Mac's notch — or at the top of your screen on Windows and Linux — and keeps an eye on your AI coding agent sessions. And now on your phone too: iPhone and Android.**
+
+Approve permissions, watch your agents work, drop a file, chat with Claude — all without leaving what you're doing. Walk away from your Mac and Mochi follows you to your iPhone: Lock Screen, Dynamic Island, widgets, Siri.
+
+**New in 0.4: Coucou is a real Mac app.** Hold a key anywhere, speak, let go: your words are pasted where you type, like Wispr Flow — free, open source, and offline with Parakeet. Record your calls without a bot in the meeting and get the transcript, the summary and the to-dos.
+
+[![Version](https://img.shields.io/github/v/release/Louis-CFM/coucou?filter=v*&label=version&color=0A84FF)](https://github.com/Louis-CFM/coucou/releases)
+![macOS 15+](https://img.shields.io/badge/macOS-15%2B-black?logo=apple)
+![iOS 18+](https://img.shields.io/badge/iOS-18%2B-black?logo=apple)
+![Android 11+](https://img.shields.io/badge/Android-11%2B-3DDC84?logo=android&logoColor=white)
+![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D4?logo=windows&logoColor=white)
+![Linux](https://img.shields.io/badge/Linux-AppImage%20%7C%20deb%20%7C%20rpm-FCC624?logo=linux&logoColor=black)
+![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
+![SwiftUI](https://img.shields.io/badge/SwiftUI-native-0A84FF)
+![Tauri 2](https://img.shields.io/badge/Tauri-2-FFC131?logo=tauri&logoColor=black)
+![Code: MIT](https://img.shields.io/badge/code-MIT-green)
+![GitHub stars](https://img.shields.io/github/stars/Louis-CFM/coucou?style=social)
+
+<img src="docs/media/demo.gif" width="760" alt="Coucou in action">
+
 </div>
-
-<div align="center">
-
-[![](https://img.shields.io/github/v/release/Louis-CFM/coucou?filter=v*&label=VERSION&style=for-the-badge&color=8ad7eb&logo=github&logoColor=D9E0EE&labelColor=1E202B)](https://github.com/Louis-CFM/coucou/releases)
-![](https://img.shields.io/github/last-commit/Louis-CFM/coucou?&style=for-the-badge&color=8ad7eb&logo=git&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/github/stars/Louis-CFM/coucou?style=for-the-badge&logo=andela&color=86dbd7&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/github/repo-size/Louis-CFM/coucou?color=86dbce&label=SIZE&logo=protondrive&style=for-the-badge&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/github/forks/Louis-CFM/coucou?color=86dbce&label=FORKS&logo=forgejo&style=for-the-badge&logoColor=D9E0EE&labelColor=1E202B)
-
-![](https://img.shields.io/badge/macOS-15%2B-86dbce?style=for-the-badge&logo=apple&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/iOS-18%2B-86dbce?style=for-the-badge&logo=apple&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/Android-11%2B-86dbce?style=for-the-badge&logo=android&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/Windows-10%2F11-86dbce?style=for-the-badge&logo=data:image/svg%2Bxml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0iI0Q5RTBFRSI%2BPHBhdGggZD0iTTAgMGgxMS40djExLjRIMHpNMTIuNiAwSDI0djExLjRIMTIuNnpNMCAxMi42aDExLjRWMjRIMHpNMTIuNiAxMi42SDI0VjI0SDEyLjZ6Ii8%2BPC9zdmc%2B&labelColor=1E202B)
-![](https://img.shields.io/badge/Linux-AppImage%20%7C%20deb%20%7C%20rpm-86dbce?style=for-the-badge&logo=linux&logoColor=D9E0EE&labelColor=1E202B)
-
-![](https://img.shields.io/badge/Swift-6-86dbd7?style=for-the-badge&logo=swift&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/SwiftUI-native-86dbd7?style=for-the-badge&logo=swift&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/Tauri-2-86dbd7?style=for-the-badge&logo=tauri&logoColor=D9E0EE&labelColor=1E202B)
-![](https://img.shields.io/badge/Code-MIT-86dbd7?style=for-the-badge&logo=opensourceinitiative&logoColor=D9E0EE&labelColor=1E202B)
-
-</div>
-
-**A tiny friend that lives in your Mac's notch (or at the top of your screen on Windows and Linux) and keeps an eye on your AI coding agent sessions. And now on your phone too: iPhone and Android.**
-
-Approve permissions, watch your agents work, drop a file, chat with Claude, all without leaving what you're doing. Walk away from your Mac and Mochi follows you to your iPhone: Lock Screen, Dynamic Island, widgets, Siri.
-
-**New in 0.4: Coucou is a real Mac app.** Hold a key anywhere, speak, let go: your words are pasted where you type, like Wispr Flow: free, open source, and offline with Parakeet. Record your calls without a bot in the meeting and get the transcript, the summary and the to-dos.
-
-<div align="center">
-    <img src="docs/media/demo.gif" width="760" alt="Coucou in action">
-</div>
-
----
-
-## Stack
-
-| Layer            | Technology                                                       |
-| ---------------- | ---------------------------------------------------------------- |
-| Mac app          | Swift 6, SwiftUI + AppKit, macOS 15+                             |
-| Mochi            | Drawn in code with `Canvas` + `TimelineView`, no images or Rive  |
-| Project          | XcodeGen (`NotchBuddy/project.yml`)                              |
-| iPhone           | SwiftUI, WidgetKit, ActivityKit (Live Activities), iOS 18+       |
-| Android          | Kotlin, Jetpack Compose, Android 11+                             |
-| Windows / Linux  | Tauri 2 (Rust + TypeScript)                                      |
-| Speech           | FluidAudio (Parakeet) on the Neural Engine, offline              |
-| Agent hooks      | Claude Code, Codex, Gemini CLI and more, over a local socket     |
-| Relay            | Cloudflare Worker for the iPhone's Live Activity pushes          |
-| Secrets          | macOS Keychain, never on disk or in git                          |
-
----
-
-## Architecture
-
-```
-.
-├── NotchBuddy/                  # The macOS app (and the iPhone app it shares code with)
-│   ├── Sources/App/             # Mac only: the notch, hooks, integrations, the Coucou window
-│   ├── Sources/CoucouKit/       # Shared with the iPhone: Mochi, outfits, pills, diffs, models
-│   ├── Sources/Phone/           # The iPhone app
-│   ├── Sources/Widgets/         # iPhone widgets and Live Activity
-│   ├── Sources/NotificationContent/  # The iPhone's expanded approval notification
-│   ├── Resources/               # Sounds, strings, entitlements, Info.plist
-│   └── project.yml              # XcodeGen project (never edit the .xcodeproj by hand)
-├── windows/                     # Tauri app for Windows and Linux, with the coucou-hook relay
-├── android/                     # Android app
-├── linux/                       # Linux packaging
-├── relay/                       # Stateless Cloudflare Worker for Live Activity pushes
-├── docs/                        # Behaviour specs, integrations, GitHub Pages site
-├── design/                      # Original prototype and target screenshots
-├── scripts/                     # Release, build and test scripts
-└── tests/                       # Swift test runners for the shared logic
-```
 
 ---
 
