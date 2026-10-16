@@ -49,6 +49,12 @@ final class GithubPoller: @unchecked Sendable {
         fetchUser(token: token)
     }
 
+    /// Reads the account again now, without waiting for the 5-minute poll: a new token's
+    /// first answer says what it may do.
+    func refreshStatsNow() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in self?.pollStats() }
+    }
+
     private func fetchUser(token: String) {
         guard let url = URL(string: "https://api.github.com/user") else { return }
         var req = URLRequest(url: url, timeoutInterval: 10)
@@ -57,7 +63,13 @@ final class GithubPoller: @unchecked Sendable {
 
         URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
             guard let self else { return }
-            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let http = response as? HTTPURLResponse
+            let code = http?.statusCode ?? 0
+            // A classic token's scopes: whether it may approve, merge and re-run.
+            if code == 200 {
+                let scopes = http?.value(forHTTPHeaderField: "X-OAuth-Scopes")
+                DispatchQueue.main.async { GitHubTokenAccess.shared.noteScopes(scopes) }
+            }
             guard let data, code == 200,
                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
 

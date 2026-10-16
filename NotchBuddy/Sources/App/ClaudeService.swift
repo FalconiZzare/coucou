@@ -71,7 +71,6 @@ final class KeychainStore: @unchecked Sendable {
         "n8n-url", "n8n-api-key",
         "vercel-token",
         "github-token",
-        "github-review-token",
         "stripe-api-key",
         "calcom-api-key",
         "notion-api-key",
@@ -88,6 +87,13 @@ final class KeychainStore: @unchecked Sendable {
         // Called once, on main thread (AppDelegate triggers shared at launch).
         for key in Self.allKeys {
             if let v = Keychain.load(key: key) { cache[key] = v }
+        }
+        // A development build kept a second "review account" GitHub token. There is one token
+        // now: the review one wins, as it was set up to approve.
+        if let review = Keychain.load(key: "github-review-token") {
+            cache["github-token"] = review
+            Keychain.save(key: "github-token", value: review)
+            Keychain.delete(key: "github-review-token")
         }
     }
 

@@ -427,11 +427,23 @@ enum ServiceAPI {
             }
         }
 
+        // A read-only token: the buttons would only fail, so they go and the footer says why.
+        let readOnly = await GitHubTokenAccess.shared.access == .readOnly
+        func shown(_ items: [DetailItem]) -> [DetailItem] {
+            readOnly ? items.map { var item = $0; item.actions = []; return item } : items
+        }
+        let readOnlyNote = "Read-only token: approve, merge and re-run are off. Change it in Coucou's Settings on your Mac."
         var sections: [DetailSection] = []
-        if !askedItems.isEmpty { sections.append(DetailSection(title: "Reviews asked of you", items: askedItems)) }
-        sections.append(DetailSection(title: "Your pull requests", items: mineItems,
-                                      footer: mineItems.isEmpty ? "No open pull request." : nil))
-        if !runItems.isEmpty { sections.append(DetailSection(title: "CI on your latest repos", items: runItems)) }
+        if !askedItems.isEmpty {
+            sections.append(DetailSection(title: "Reviews asked of you", items: shown(askedItems),
+                                          footer: readOnly ? readOnlyNote : nil))
+        }
+        sections.append(DetailSection(title: "Your pull requests", items: shown(mineItems),
+                                      footer: mineItems.isEmpty ? "No open pull request." : (readOnly ? readOnlyNote : nil)))
+        if !runItems.isEmpty {
+            sections.append(DetailSection(title: "CI on your latest repos", items: shown(runItems),
+                                          footer: readOnly && failing > 0 ? readOnlyNote : nil))
+        }
         return ServiceDetail(pillId: "integration_github",
                              stats: [DetailStat(label: "Your PRs", value: "\(mineItems.count)", tone: .info),
                                      DetailStat(label: "Reviews", value: "\(askedItems.count)", tone: askedItems.isEmpty ? .idle : .warning),
@@ -748,20 +760,20 @@ enum ServiceAPI {
             // "owner/repo/123"
             let parts = target.split(separator: "/").map(String.init)
             guard parts.count == 3 else { throw Failure(status: 0, message: "Unknown run") }
-            _ = try await request("https://api.github.com/repos/\(parts[0])/\(parts[1])/actions/runs/\(parts[2])/rerun-failed-jobs",
-                                  method: "POST", headers: try githubHeaders())
+            try await githubWrite("https://api.github.com/repos/\(parts[0])/\(parts[1])/actions/runs/\(parts[2])/rerun-failed-jobs",
+                                  method: "POST")
             return "Failed jobs started again"
         case "github.approve", "github.merge":
             // "owner/repo#12"
             let pieces = target.split(separator: "#").map(String.init)
             guard pieces.count == 2 else { throw Failure(status: 0, message: "Unknown pull request") }
             if kind == "github.approve" {
-                _ = try await request("https://api.github.com/repos/\(pieces[0])/pulls/\(pieces[1])/reviews", method: "POST",
-                                      headers: try githubHeaders(), body: ["event": "APPROVE"])
+                try await githubWrite("https://api.github.com/repos/\(pieces[0])/pulls/\(pieces[1])/reviews", method: "POST",
+                                      body: ["event": "APPROVE"])
                 return "Approved"
             }
-            _ = try await request("https://api.github.com/repos/\(pieces[0])/pulls/\(pieces[1])/merge", method: "PUT",
-                                  headers: try githubHeaders(), body: ["merge_method": "squash"])
+            try await githubWrite("https://api.github.com/repos/\(pieces[0])/pulls/\(pieces[1])/merge", method: "PUT",
+                                  body: ["merge_method": "squash"])
             return "Merged"
         case "n8n.activate", "n8n.deactivate", "n8n.retry":
             let key = try secret("n8n-api-key", "n8n")
@@ -791,6 +803,18 @@ enum ServiceAPI {
     private static func vercelHeaders() throws -> [String: String] {
         let token = try secret("vercel-token", "Vercel")
         return ["Authorization": "Bearer \(token)", "Accept": "application/json"]
+    }
+
+    /// A write with the GitHub token. GitHub's refusal of a token that may only read is
+    /// remembered, so Coucou shows the token as read-only from then on.
+    private static func githubWrite(_ url: String, method: String, body: [String: Any]? = nil) async throws {
+        do {
+            _ = try await request(url, method: method, headers: try githubHeaders(), body: body)
+            await GitHubTokenAccess.shared.noteWriteAccepted()
+        } catch let failure as Failure where GitHubTokenAccess.isReadOnlyRefusal(status: failure.status, message: failure.message) {
+            await GitHubTokenAccess.shared.noteWriteRefused()
+            throw Failure(status: 0, message: GitHubTokenAccess.readOnlyMessage)
+        }
     }
 
     private static func githubHeaders() throws -> [String: String] {
