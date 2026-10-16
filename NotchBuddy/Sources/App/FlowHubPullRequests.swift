@@ -341,13 +341,13 @@ private struct HubPullRequestDetail: View {
             HStack(spacing: 8) {
                 Button(sending == .approve ? "Approving…" : "Approve") { send(.approve) }
                     .buttonStyle(HubButtonStyle(primary: true))
-                    .disabled(sending != nil || readOnly || isOwn || !pr.isOpen)
+                    .reviewButtonOff(sending != nil || readOnly || isOwn || !pr.isOpen)
                 Button("Request changes") { send(.requestChanges) }
                     .buttonStyle(HubButtonStyle())
-                    .disabled(sending != nil || readOnly || isOwn || !pr.isOpen || trimmed.isEmpty)
+                    .reviewButtonOff(sending != nil || readOnly || isOwn || !pr.isOpen || trimmed.isEmpty)
                 Button("Comment") { send(.comment) }
                     .buttonStyle(HubButtonStyle())
-                    .disabled(sending != nil || readOnly || trimmed.isEmpty)
+                    .reviewButtonOff(sending != nil || readOnly || trimmed.isEmpty)
                 Spacer(minLength: 0)
                 if let result {
                     Text(result.text)
@@ -409,6 +409,14 @@ private struct HubPullRequestDetail: View {
             }
             sending = nil
         }
+    }
+}
+
+private extension View {
+    /// Off, and faded so it reads as off: the window's button style draws a disabled button the
+    /// same as an enabled one (a merged pull request's Approve looked clickable).
+    func reviewButtonOff(_ off: Bool) -> some View {
+        disabled(off).opacity(off ? 0.35 : 1)
     }
 }
 
