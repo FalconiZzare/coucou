@@ -162,6 +162,9 @@ final class GithubPoller: @unchecked Sendable {
                 if AppState.shared.activeIntegrations.contains("integration_github") {
                     AppState.shared.handleGitHubEvents(events)
                 }
+                #if !APPSTORE
+                self.fetchUnreadPRs(token: token, generation: generation)
+                #endif
             }
             self.finishPulse(hasPending: pulse.hasPending)
         }.resume()
@@ -188,12 +191,56 @@ final class GithubPoller: @unchecked Sendable {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.tokenGeneration += 1
+            #if !APPSTORE
+            self.inboxLastModified = nil
+            AppState.shared.githubUnreadPRs = 0
+            #endif
             self.nextPulse?.cancel()
             self.nextPulse = nil
             guard !self.pulseInFlight else { return }
             self.pollPulse()
         }
     }
+
+    #if !APPSTORE
+    // MARK: - Inbox (the counter on the GitHub card)
+
+    /// The inbox's last Last-Modified, sent back so an unchanged inbox answers 304, which GitHub
+    /// does not count against the rate limit. Main thread only.
+    private var inboxLastModified: String?
+
+    /// Counts the unread pull request threads of the account's GitHub inbox, after each pulse.
+    /// Must run on the main thread. A fine-grained token has no inbox: it stays at 0.
+    private func fetchUnreadPRs(token: String, generation: Int) {
+        guard let url = URL(string: "https://api.github.com/notifications?per_page=50") else { return }
+        var req = URLRequest(url: url, timeoutInterval: 15)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        if let since = inboxLastModified { req.setValue(since, forHTTPHeaderField: "If-Modified-Since") }
+        URLSession.shared.dataTask(with: req) { [weak self] data, response, _ in
+            let http = response as? HTTPURLResponse
+            // 304: nothing new since the last count.
+            guard http?.statusCode == 200, let data,
+                  let list = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+            let count = list.filter { ($0["subject"] as? [String: Any])?["type"] as? String == "PullRequest" }.count
+            let modified = http?.value(forHTTPHeaderField: "Last-Modified")
+            DispatchQueue.main.async {
+                guard let self, self.tokenGeneration == generation else { return }
+                self.inboxLastModified = modified
+                AppState.shared.githubUnreadPRs = count
+            }
+        }.resume()
+    }
+
+    /// Counts again now: a pull request was just read in the Pull requests page.
+    func refreshUnreadPRs() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let token = KeychainStore.shared.get("github-token") else { return }
+            self.inboxLastModified = nil
+            self.fetchUnreadPRs(token: token, generation: self.tokenGeneration)
+        }
+    }
+    #endif
 
     private func nbLog(_ message: String) {
         appendAppLog("github.log", message)

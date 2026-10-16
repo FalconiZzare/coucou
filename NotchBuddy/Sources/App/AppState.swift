@@ -377,6 +377,8 @@ final class AppState: ObservableObject {
     @Published var githubStats: GitHubStats? = nil
     @Published var githubPulse: GitHubPulse? = nil
     @Published var githubActivity: GitHubActivity? = nil
+    /// Unread pull request threads of the account's GitHub inbox, counted on the GitHub card.
+    @Published var githubUnreadPRs = 0
 
     // Stripe (populated by StripePoller)
     @Published var stripePayments: [StripePayment] = []
