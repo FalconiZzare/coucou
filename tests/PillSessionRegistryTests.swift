@@ -96,6 +96,33 @@ enum PillSessionRegistryTests {
             check("B may write the card now", reg.ownsDisplay(pill: claude, session: "b"))
         }
 
+        // ── a prompt hands the name to the session written to ───────────────────
+        print("\nThe session that spoke takes the display")
+        do {
+            var reg = PillSessionRegistry()
+            reg.note(pill: claude, display: display("a", "coucou", "/a"), working: true)
+            reg.note(pill: claude, display: display("b", "lokil", "/b"), working: true)
+            check("noting B alone leaves A's name", reg.displayOwner(of: claude)?.projectName == "coucou")
+
+            reg.takeDisplay(pill: claude, session: "b")
+            check("B owns the name once it speaks", reg.displayOwner(of: claude)?.projectName == "lokil")
+            check("B's cwd too", reg.displayOwner(of: claude)?.cwd == "/b")
+            check("B may write the card", reg.ownsDisplay(pill: claude, session: "b"))
+            check("A may not write it", !reg.ownsDisplay(pill: claude, session: "a"))
+
+            reg.takeDisplay(pill: claude, session: "a")
+            check("A's answer takes it back", reg.displayOwner(of: claude)?.projectName == "coucou")
+            check("no duplicate entry", reg.liveCount(pill: claude) == 2)
+
+            reg.takeDisplay(pill: claude, session: "ghost")
+            check("an unknown session takes nothing", reg.displayOwner(of: claude)?.session == "a")
+            reg.takeDisplay(pill: "agent_cursor", session: "a")
+            check("nor does an empty pill come alive", reg.liveCount(pill: "agent_cursor") == 0)
+
+            _ = reg.endSession(pill: claude, session: "a")
+            check("B inherits when A ends", reg.displayOwner(of: claude)?.projectName == "lokil")
+        }
+
         // ── empty cwd must not erase a known one ────────────────────────────────
         print("\nPartial payloads")
         do {
