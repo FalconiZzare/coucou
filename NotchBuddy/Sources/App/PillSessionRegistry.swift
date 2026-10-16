@@ -56,7 +56,8 @@ struct PillSessionRegistry {
     }
 
     private struct Pill {
-        /// Live sessions, oldest first. The first one owns name and cwd.
+        /// Live sessions. The first one owns name and cwd: the one that spoke
+        /// last, else the oldest.
         var order: [String] = []
         var sessions: [String: Session] = [:]
     }
@@ -85,6 +86,15 @@ struct PillSessionRegistry {
         if working { session.isWorking = true }
         session.lastSeen = now
         p.sessions[display.session] = session
+        pills[pill] = p
+    }
+
+    /// Hands the pill's name and cwd to a live session: the one whose prompt,
+    /// tool call or answer the card now shows. A session not live here is ignored.
+    mutating func takeDisplay(pill: String, session: String) {
+        guard var p = pills[pill], p.sessions[session] != nil else { return }
+        p.order.removeAll { $0 == session }
+        p.order.insert(session, at: 0)
         pills[pill] = p
     }
 
@@ -122,8 +132,8 @@ struct PillSessionRegistry {
     // MARK: - Reading
 
     /// The session whose project name and cwd the pill shows. Ownership goes
-    /// to the oldest live session and only moves on when that one ends, so a
-    /// single name field stops flipping between two parallel sessions.
+    /// to the session that spoke last (else the oldest live one), so the name
+    /// always matches the step under it. Opening a session doesn't move it.
     func displayOwner(of pill: String) -> Display? {
         guard let p = pills[pill], let id = p.order.first,
               let session = p.sessions[id] else { return nil }

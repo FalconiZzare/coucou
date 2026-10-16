@@ -675,6 +675,14 @@ final class HookServer: @unchecked Sendable {
         default:
             break
         }
+
+        // Sessions sharing a pill share its steps, so the name follows the session that spoke
+        // last: the project on the card is always the one whose prompt, tool or answer it shows.
+        // Opening or closing a session shows nothing, so it leaves the name where it is.
+        if !isExternalAgent, name != "SessionStart", name != "SessionEnd" {
+            sessions.takeDisplay(pill: agentId, session: sessionId)
+            applyDisplayOwner(pill: agentId)
+        }
     }
 
     // MARK: - Agent validation + dynamic pill
