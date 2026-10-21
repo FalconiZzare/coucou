@@ -325,7 +325,13 @@ final class IslandWindowController: NSWindowController {
         }
 
         // An approval, or an email prepared by voice, stays open until I click.
+        #if !APPSTORE
+        // A WhatsApp reply being typed holds the island open, like a voice mail draft.
+        fsm.isHeldOpen = { AppState.shared.pendingApproval != nil || AppState.shared.voiceMailDraft != nil
+                           || WhatsAppController.shared.composing }
+        #else
         fsm.isHeldOpen = { AppState.shared.pendingApproval != nil || AppState.shared.voiceMailDraft != nil }
+        #endif
 
         // Voice: wake phrase detected → open listening island
         #if !APPSTORE
@@ -599,6 +605,7 @@ final class IslandWindowController: NSWindowController {
         if prev == .expanded {
             SoundEngine.shared.play("close")
             if fsm.isHeldOpen?() != true { state.isPinned = false }
+            HookServer.shared.restoreAlertFocus()
         }
     }
 
