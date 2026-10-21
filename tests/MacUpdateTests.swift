@@ -30,6 +30,11 @@ enum MacUpdateTests {
         check("android-v0.2.0", MacUpdate.macVersion("android-v0.2.0") == nil)
         check("v0.5.1-beta", MacUpdate.macVersion("v0.5.1-beta") == nil)
         check("v", MacUpdate.macVersion("v") == nil)
+        check("v0.5.2-rc.3", MacUpdate.macVersion("v0.5.2-rc.3") == "0.5.2-rc.3")
+        check("v0.5.2-rc. has no build", MacUpdate.macVersion("v0.5.2-rc.") == nil)
+        check("v0.5.2-rc.x", MacUpdate.macVersion("v0.5.2-rc.x") == nil)
+        check("v0.5.2-rc.1-rc.2", MacUpdate.macVersion("v0.5.2-rc.1-rc.2") == nil)
+        check("windows-v0.5.1-rc.1 is not the Mac's", MacUpdate.macVersion("windows-v0.5.1-rc.1") == nil)
 
         print("\nVersions compare as numbers")
         check("0.10.0 > 0.9.3", MacUpdate.isNewer("0.10.0", than: "0.9.3"))
@@ -37,6 +42,16 @@ enum MacUpdateTests {
         check("0.5 = 0.5.0", !MacUpdate.isNewer("0.5", than: "0.5.0") && !MacUpdate.isNewer("0.5.0", than: "0.5"))
         check("0.5.0 < 0.5.1", !MacUpdate.isNewer("0.5.0", than: "0.5.1"))
         check("1.0.0 > 0.99.99", MacUpdate.isNewer("1.0.0", than: "0.99.99"))
+
+        print("\nThe fork's builds of a version")
+        check("rc.2 > rc.1", MacUpdate.isNewer("0.5.2-rc.2", than: "0.5.2-rc.1"))
+        check("rc.10 > rc.9", MacUpdate.isNewer("0.5.2-rc.10", than: "0.5.2-rc.9"))
+        check("rc.1 > the plain version", MacUpdate.isNewer("0.5.2-rc.1", than: "0.5.2"))
+        check("the plain version < rc.1", !MacUpdate.isNewer("0.5.2", than: "0.5.2-rc.1"))
+        check("rc.1 = rc.1", !MacUpdate.isNewer("0.5.2-rc.1", than: "0.5.2-rc.1"))
+        check("upstream's bump first: 0.5.3-rc.1 > 0.5.2-rc.9", MacUpdate.isNewer("0.5.3-rc.1", than: "0.5.2-rc.9"))
+        check("0.5.2-rc.9 < 0.5.3-rc.1", !MacUpdate.isNewer("0.5.2-rc.9", than: "0.5.3-rc.1"))
+        check("rc.1 > an older plain build", MacUpdate.isNewer("0.5.2-rc.1", than: "0.4.0"))
 
         print("\nThe newest published Mac release")
         do {
@@ -53,6 +68,8 @@ enum MacUpdateTests {
             check("headline from the bold part", r?.headline == "One-click update")
             check("nothing for drafts and others only", MacUpdate.latest(json([release("v0.9.0", draft: true), release("windows-v1.0")])) == nil)
             check("garbage", MacUpdate.latest(Data("{\"message\":\"rate limited\"}".utf8)) == nil)
+            let rcs = MacUpdate.latest(json([release("v0.5.2-rc.2"), release("v0.5.3-rc.1"), release("v0.5.2-rc.10")]))
+            check("the newest rc of the newest version", rcs?.tag == "v0.5.3-rc.1")
         }
 
         print("\nHeadline")
@@ -95,7 +112,8 @@ enum MacUpdateTests {
         check("right id and version", MacUpdate.matches(infoPlist: ["CFBundleIdentifier": "fr.louisraille.NotchBuddy", "CFBundleShortVersionString": "0.6.0"], version: "0.6.0"))
         check("another app", !MacUpdate.matches(infoPlist: ["CFBundleIdentifier": "com.evil.app", "CFBundleShortVersionString": "0.6.0"], version: "0.6.0"))
         check("another version", !MacUpdate.matches(infoPlist: ["CFBundleIdentifier": "fr.louisraille.NotchBuddy", "CFBundleShortVersionString": "0.5.9"], version: "0.6.0"))
-        check("requirement names the team", MacUpdate.codeRequirement.contains("256AUJ9555") && MacUpdate.codeRequirement.contains("anchor apple generic"))
+        check("requirement pins the fork's certificate",
+              MacUpdate.codeRequirement == "identifier \"fr.louisraille.NotchBuddy\" and certificate leaf = H\"CA0C36BA55F83D7914A8FF5DDF009736586D5110\"")
 
         if failures > 0 {
             print("\n\(failures) failure(s)")

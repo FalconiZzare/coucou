@@ -6,15 +6,18 @@ import Foundation
 // `vX.Y.Z` with a `Coucou.zip`; Windows, Linux and Android have their own prefixed tags.
 
 enum MacUpdate {
-    static let owner = "Louis-CFM"
+    static let owner = "FalconiZzare"
     static let repo = "coucou"
     static let releasesURL = URL(string: "https://api.github.com/repos/\(owner)/\(repo)/releases?per_page=20")!
-    /// What the downloaded app must be signed as: Coucou's bundle id, Louis's Developer ID team.
+    /// What the downloaded app must be signed as: Coucou's bundle id and the fork's self-signed
+    /// "Coucou Local Signing" certificate (its SHA-1). Only that certificate's private key can sign it.
     static let bundleId = "fr.louisraille.NotchBuddy"
-    static let teamId = "256AUJ9555"
+    static let certificateSHA1 = "CA0C36BA55F83D7914A8FF5DDF009736586D5110"
     static var codeRequirement: String {
-        "anchor apple generic and identifier \"\(bundleId)\" and certificate leaf[subject.OU] = \"\(teamId)\""
+        "identifier \"\(bundleId)\" and certificate leaf = H\"\(certificateSHA1)\""
     }
+    /// A self-signed build can't be notarized, so Gatekeeper is not asked: the certificate pin is the check.
+    static let requiresNotarization = false
 
     struct Release: Equatable, Sendable {
         let version: String
@@ -42,23 +45,33 @@ enum MacUpdate {
         return releases.max { isNewer($1.version, than: $0.version) }
     }
 
-    /// "v0.5.1" → "0.5.1"; "windows-v0.5.0", "linux-latest", "android-v0.2.0" → nil.
+    /// "v0.5.2-rc.3" → "0.5.2-rc.3", "v0.5.1" → "0.5.1"; "windows-v0.5.0", "linux-latest", "android-v0.2.0" → nil.
     static func macVersion(_ tag: String) -> String? {
         guard tag.hasPrefix("v") else { return nil }
         let v = String(tag.dropFirst())
-        let parts = v.split(separator: ".")
-        guard (2...4).contains(parts.count), parts.allSatisfy({ !$0.isEmpty && $0.allSatisfy(\.isNumber) }) else { return nil }
+        let halves = v.components(separatedBy: "-rc.")
+        let parts = halves[0].split(separator: ".")
+        func number(_ s: Substring) -> Bool { !s.isEmpty && s.allSatisfy(\.isASCII) && s.allSatisfy(\.isNumber) }
+        guard halves.count <= 2, (2...4).contains(parts.count), parts.allSatisfy(number),
+              halves.count == 1 || number(Substring(halves[1])) else { return nil }
         return v
     }
 
-    /// Numeric comparison: 0.10.0 is newer than 0.9.3, 0.5.1 than 0.5.
+    /// Numeric comparison: 0.10.0 is newer than 0.9.3, 0.5.1 than 0.5. Then the fork's build:
+    /// 0.5.2-rc.2 is newer than 0.5.2-rc.1, and than 0.5.2 itself (unlike semver), so a plain
+    /// upstream or dev build of 0.5.2 is offered the fork's.
     static func isNewer(_ a: String, than b: String) -> Bool {
-        let x = a.split(separator: ".").map { Int($0) ?? 0 }, y = b.split(separator: ".").map { Int($0) ?? 0 }
+        let (x, rcA) = numbers(a), (y, rcB) = numbers(b)
         for i in 0..<max(x.count, y.count) {
             let l = i < x.count ? x[i] : 0, r = i < y.count ? y[i] : 0
             if l != r { return l > r }
         }
-        return false
+        return rcA > rcB
+    }
+
+    private static func numbers(_ version: String) -> ([Int], rc: Int) {
+        let halves = version.components(separatedBy: "-rc.")
+        return (halves[0].split(separator: ".").map { Int($0) ?? 0 }, halves.count == 2 ? Int(halves[1]) ?? 0 : 0)
     }
 
     /// The bold part of the first bullet under "## What's new", else the bullet's start.

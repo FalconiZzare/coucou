@@ -26,6 +26,9 @@ configs:
   DebugCloud: debug
   Release: release
   ReleaseCloud: release
+  # The fork's GitHub build (scripts/release-fork.sh): self-signed by the script, so no iCloud
+  # and no iPhone link.
+  ReleaseFork: release
 
 settings:
   base:
@@ -60,6 +63,9 @@ settings:
       DEVELOPMENT_TEAM: 256AUJ9555
       OTHER_CODE_SIGN_FLAGS: "--timestamp"
       CODE_SIGN_INJECT_BASE_ENTITLEMENTS: NO
+    ReleaseFork:
+      CODE_SIGNING_REQUIRED: NO
+      CODE_SIGNING_ALLOWED: NO
 
 schemes:
   NotchBuddy:
@@ -192,6 +198,8 @@ targets:
           CODE_SIGN_ENTITLEMENTS: Resources/CoucouReleaseCloud.entitlements
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: PHONE_LINK
           PROVISIONING_PROFILE_SPECIFIER: "Coucou Developer ID"
+        ReleaseFork:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: ""
     dependencies:
       - package: FluidAudio
     postBuildScripts:

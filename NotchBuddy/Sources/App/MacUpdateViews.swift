@@ -121,7 +121,7 @@ struct UpdateSettingsSection: View {
             VStack(alignment: .leading, spacing: 10) {
                 Toggle(String(localized: "update.settings.toggle"), isOn: $enabled)
                     .onChange(of: enabled) { _, on in updater.setEnabled(on) }
-                Text(String(localized: "update.settings.footer"))
+                Text(String(localized: "update.fork.settings.footer"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

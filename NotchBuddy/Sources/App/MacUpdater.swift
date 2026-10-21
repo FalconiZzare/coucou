@@ -7,8 +7,9 @@ import Security
 // its own build). Coucou looks at its own GitHub releases only once the user said yes, a few
 // times a day; nothing about the user goes with the request. The update is downloaded from
 // GitHub only, then checked before anything is replaced: the app in the zip must be Coucou
-// (bundle id and the announced version), signed with Louis's Developer ID, and accepted by
-// Gatekeeper (notarized). Only then does it take the place of the running app, which restarts.
+// (bundle id and the announced version) and signed with the certificate MacUpdate pins (and
+// accepted by Gatekeeper, for a notarized build). Only then does it take the place of the
+// running app, which restarts.
 
 @MainActor
 final class MacUpdater: ObservableObject {
@@ -309,10 +310,12 @@ final class MacUpdater: ObservableObject {
         guard SecStaticCodeCreateWithPath(app as CFURL, [], &code) == errSecSuccess, let code,
               SecRequirementCreateWithString(MacUpdate.codeRequirement as CFString, [], &requirement) == errSecSuccess,
               let requirement,
-              SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess else { throw fail("update.error.signature") }
+              SecStaticCodeCheckValidity(code, flags, requirement) == errSecSuccess else { throw fail("update.fork.error.signature") }
 
         // Notarized: Gatekeeper accepts it as it would a download from the browser.
-        guard run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path]) else { throw fail("update.error.signature") }
+        guard !MacUpdate.requiresNotarization || run("/usr/sbin/spctl", ["--assess", "--type", "execute", app.path]) else {
+            throw fail("update.fork.error.signature")
+        }
 
         removexattr(app.path, "com.apple.quarantine", 0)
         return app

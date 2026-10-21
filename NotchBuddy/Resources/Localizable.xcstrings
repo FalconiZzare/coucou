@@ -1959,6 +1959,28 @@
         }
       }
     },
+    "update.fork.error.signature" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The download isn’t signed by this fork’s developer, so it wasn’t installed."
+          }
+        }
+      }
+    },
+    "update.fork.settings.footer" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coucou looks at this fork’s releases on GitHub a few times a day. An update is installed only after your click, once its signature checks out as the fork developer’s."
+          }
+        }
+      }
+    },
     "update.installing" : {
       "extractionState" : "manual",
       "localizations" : {
