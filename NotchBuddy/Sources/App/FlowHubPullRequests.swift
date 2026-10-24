@@ -310,11 +310,7 @@ private struct HubPullRequestDetail: View {
                 HubReviewBadge(pr: pr)
             }
             if !prBody.isEmpty {
-                Text(prBody)
-                    .font(.system(size: 13))
-                    .foregroundColor(HubTheme.body)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                ChatMarkdownView(markdown: prBody, bodySize: 13, bodyColor: HubTheme.body)
                     .padding(.top, 4)
             }
         }
@@ -386,12 +382,62 @@ private struct HubPullRequestDetail: View {
             let (fresh, text, list) = try await GitHubReview.details(of: pr)
             // Where it stands now, in the list too (merged, approved since the last refresh).
             if let fresh { PullRequestInbox.shared.update(fresh) }
-            prBody = text
+            prBody = Self.markdown(text)
             files = list
         } catch {
             loadError = error.localizedDescription
         }
         loading = false
+    }
+
+    /// The description as the chat's Markdown reads it: GitHub's CRLF line ends, the template's
+    /// hidden `<!-- -->` comments and the HTML tags GitHub draws (`<details>`…) left out, images
+    /// and @mentions as links.
+    private static func markdown(_ body: String) -> String {
+        let text = body.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "<!--[\\s\\S]*?-->", with: "", options: .regularExpression)
+        return outsideCode(text, links)
+            .replacingOccurrences(of: "</?(details|summary|p|br|sub|sup|picture|source)\\b[^>]*>",
+                                  with: "", options: [.regularExpression, .caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// `transform` on the text outside fenced code blocks and `inline code` (`@MainActor` stays).
+    private static func outsideCode(_ text: String, _ transform: (String) -> String) -> String {
+        var inFence = false
+        return text.components(separatedBy: "\n").map { line in
+            if line.hasPrefix("```") { inFence.toggle(); return line }
+            if inFence { return line }
+            // The even pieces sit outside backticks.
+            return line.components(separatedBy: "`").enumerated()
+                .map { $0.offset.isMultiple(of: 2) ? transform($0.element) : $0.element }
+                .joined(separator: "`")
+        }.joined(separator: "\n")
+    }
+
+    /// An image (Markdown, a linked badge or GitHub's `<img>` screenshot) as a link to it, and
+    /// `@user` as a link to their GitHub profile.
+    private static func links(_ text: String) -> String {
+        let images = text
+            .replacing(#/\[!\[([^\]]*)\]\([^)]*\)\]\(([^)\s]+)\)/#) { "[\(imageLabel($0.1))](\($0.2))" }
+            .replacing(#/!\[([^\]]*)\]\(([^)\s]+)[^)]*\)/#) { "[\(imageLabel($0.1))](\($0.2))" }
+            .replacing(#/<img\b[^>]*>/#.ignoresCase()) { match in
+                guard let src = match.0.firstMatch(of: #/src="([^"]+)"/#)?.1 else { return "" }
+                let alt = match.0.firstMatch(of: #/alt="([^"]*)"/#)?.1 ?? ""
+                return "[\(imageLabel(alt))](\(src))"
+            }
+        return mention.stringByReplacingMatches(in: images, range: NSRange(images.startIndex..., in: images),
+                                                withTemplate: "[@$1](https://github.com/$1)")
+    }
+
+    /// GitHub's login rules; not an email, a path, an existing link's text or a team (`@org/team`).
+    private static let mention = try! NSRegularExpression(
+        pattern: "(?<![\\w/@\\[])@([A-Za-z0-9][A-Za-z0-9-]{0,38})(?![\\w/-])")
+
+    /// "Image: Screenshot…", or "Image" for no alt or GitHub's default "image".
+    private static func imageLabel(_ alt: Substring) -> String {
+        let alt = alt.trimmingCharacters(in: .whitespaces)
+        return alt.isEmpty || alt.lowercased() == "image" ? "Image" : "Image: \(alt)"
     }
 
     /// Sent only from a click on one of the three buttons.
