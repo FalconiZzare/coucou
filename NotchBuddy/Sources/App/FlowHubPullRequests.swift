@@ -341,7 +341,7 @@ private struct HubPullRequestDetail: View {
             HStack(spacing: 8) {
                 Button(sending == .approve ? "Approving…" : "Approve") { send(.approve) }
                     .buttonStyle(HubButtonStyle(primary: true))
-                    .reviewButtonOff(sending != nil || readOnly || isOwn || !pr.isOpen)
+                    .reviewButtonOff(sending != nil || readOnly || isOwn || !pr.isOpen || approved)
                 Button("Request changes") { send(.requestChanges) }
                     .buttonStyle(HubButtonStyle())
                     .reviewButtonOff(sending != nil || readOnly || isOwn || !pr.isOpen || trimmed.isEmpty)
@@ -376,11 +376,16 @@ private struct HubPullRequestDetail: View {
 
     private var trimmed: String { comment.trimmingCharacters(in: .whitespacesAndNewlines) }
 
+    /// The account's last review approves it: approving again would change nothing.
+    private var approved: Bool { pr.viewerReview == "APPROVED" }
+
     private func load() async {
         loading = true
         loadError = nil
         do {
-            let (text, list) = try await GitHubReview.details(of: pr)
+            let (fresh, text, list) = try await GitHubReview.details(of: pr)
+            // Where it stands now, in the list too (merged, approved since the last refresh).
+            if let fresh { PullRequestInbox.shared.update(fresh) }
             prBody = text
             files = list
         } catch {
@@ -403,7 +408,7 @@ private struct HubPullRequestDetail: View {
                 case .comment:        result = ("Comment sent", true)
                 }
                 comment = ""
-                PullRequestInbox.shared.refresh()
+                PullRequestInbox.shared.reviewed(pr, event)
             } catch {
                 result = (error.localizedDescription, false)
             }
