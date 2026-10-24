@@ -4,6 +4,9 @@ import SwiftUI
 
 struct ChatMarkdownView: View {
     let markdown: String
+    /// The text's size and colour, the chat's by default; headings and code follow the size.
+    var bodySize: CGFloat = 12.5
+    var bodyColor = Color(hex: "#B0B5BE")
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -23,22 +26,22 @@ struct ChatMarkdownView: View {
         switch block {
         case .heading(let level, let text):
             Text(inlineAttributed(text))
-                .font(.system(size: level <= 2 ? 14 : 13, weight: level <= 2 ? .bold : .semibold))
+                .font(.system(size: bodySize + (level <= 2 ? 1.5 : 0.5), weight: level <= 2 ? .bold : .semibold))
                 .foregroundColor(Color(hex: "#F1F2F4"))
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
 
         case .paragraph(let text):
             Text(inlineAttributed(text))
-                .font(.system(size: 12.5))
-                .foregroundColor(Color(hex: "#B0B5BE"))
+                .font(.system(size: bodySize))
+                .foregroundColor(bodyColor)
                 .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
 
         case .codeBlock(_, let code):
             HStack(alignment: .top) {
                 Text(code)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: bodySize - 1.5, design: .monospaced))
                     .foregroundColor(Color(hex: "#C8CDD4"))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -53,12 +56,12 @@ struct ChatMarkdownView: View {
         case .listItem(let prefix, let text, let indent):
             HStack(alignment: .top, spacing: 6) {
                 Text(prefix)
-                    .font(.system(size: 12.5))
+                    .font(.system(size: bodySize))
                     .foregroundColor(Color(hex: "#6B7079"))
                     .frame(minWidth: prefix.count > 2 ? 20 : 10, alignment: .leading)
                 Text(inlineAttributed(text))
-                    .font(.system(size: 12.5))
-                    .foregroundColor(Color(hex: "#B0B5BE"))
+                    .font(.system(size: bodySize))
+                    .foregroundColor(bodyColor)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
@@ -71,7 +74,7 @@ struct ChatMarkdownView: View {
                     .frame(width: 2)
                     .clipShape(Capsule())
                 Text(inlineAttributed(text))
-                    .font(.system(size: 12.5))
+                    .font(.system(size: bodySize))
                     .foregroundColor(Color(hex: "#8A8F98"))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)

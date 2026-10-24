@@ -6,7 +6,7 @@ enum MDBlock {
     case heading(level: Int, text: String)
     case paragraph(text: String)
     case codeBlock(lang: String, code: String)
-    /// prefix: "•" for unordered, "1." / "2." etc for ordered; indent: nesting level (0-based)
+    /// prefix: "•" for unordered, "1." / "2." etc for ordered, "☐" / "☑" for a task; indent: nesting level (0-based)
     case listItem(prefix: String, text: String, indent: Int)
     case quote(text: String)
     case rule
@@ -72,8 +72,15 @@ enum ChatMarkdown {
             let leadingSpaces = line.prefix(while: { $0 == " " }).count
             let indent = leadingSpaces / 2
             if stripped.hasPrefix("- ") || stripped.hasPrefix("* ") || stripped.hasPrefix("+ ") {
-                let text = String(stripped.dropFirst(2))
-                blocks.append(.listItem(prefix: "•", text: text, indent: indent))
+                var text = String(stripped.dropFirst(2))
+                var prefix = "•"
+                // GitHub task list: "- [ ] to do", "- [x] done"
+                if text.hasPrefix("[ ] ") {
+                    prefix = "☐"; text = String(text.dropFirst(4))
+                } else if text.hasPrefix("[x] ") || text.hasPrefix("[X] ") {
+                    prefix = "☑"; text = String(text.dropFirst(4))
+                }
+                blocks.append(.listItem(prefix: prefix, text: text, indent: indent))
                 i += 1
                 continue
             }
