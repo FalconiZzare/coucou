@@ -73,7 +73,8 @@ echo "Release zip ready: $ZIP"
 
 # ── 4. Notes: the commits since the previous rc (since main for the first one) ─
 PREV=$(git tag -l "v*-rc.*" --sort=-v:refname | head -1)
-CHANGES=$(git log --no-merges --format='- %s' "${PREV:-origin/main}..$COMMIT" | head -40)
+# -n, not "| head": with pipefail, head closing the pipe early ends the script (SIGPIPE).
+CHANGES=$(git log --no-merges -n 40 --format='- %s' "${PREV:-origin/main}..$COMMIT")
 [ -n "$CHANGES" ] || CHANGES="- Rebuilt on Coucou $BASE"
 
 NOTES="Coucou $VERSION for macOS 15 or later (Apple silicon and Intel): upstream Coucou $BASE with the fork's changes.
