@@ -96,31 +96,44 @@ enum PillSessionRegistryTests {
             check("B may write the card now", reg.ownsDisplay(pill: claude, session: "b"))
         }
 
-        // ── a prompt hands the name to the session written to ───────────────────
-        print("\nThe session that spoke takes the display")
+        // ── the name follows the session that is working ───────────────────────
+        // Negative case: "oldest live session owns the name" shows Locker here
+        // while only GA works.
+        print("\nName follows the working session")
         do {
             var reg = PillSessionRegistry()
-            reg.note(pill: claude, display: display("a", "coucou", "/a"), working: true)
-            reg.note(pill: claude, display: display("b", "lokil", "/b"), working: true)
-            check("noting B alone leaves A's name", reg.displayOwner(of: claude)?.projectName == "coucou")
+            let t0 = Date()
+            reg.note(pill: claude, display: display("locker", "locker"), working: true, now: t0)
+            reg.note(pill: claude, display: display("ga", "ga"), working: true, now: t0 + 1)
+            check("both working: the oldest keeps the name",
+                  reg.displayOwner(of: claude)?.session == "locker")
 
-            reg.takeDisplay(pill: claude, session: "b")
-            check("B owns the name once it speaks", reg.displayOwner(of: claude)?.projectName == "lokil")
-            check("B's cwd too", reg.displayOwner(of: claude)?.cwd == "/b")
-            check("B may write the card", reg.ownsDisplay(pill: claude, session: "b"))
-            check("A may not write it", !reg.ownsDisplay(pill: claude, session: "a"))
+            _ = reg.endTurn(pill: claude, session: "locker", now: t0 + 2)
+            check("Locker done, GA working: GA's name",
+                  reg.displayOwner(of: claude)?.projectName == "ga")
+            check("GA may write the card", reg.ownsDisplay(pill: claude, session: "ga"))
+            check("idle Locker may not", !reg.ownsDisplay(pill: claude, session: "locker"))
 
-            reg.takeDisplay(pill: claude, session: "a")
-            check("A's answer takes it back", reg.displayOwner(of: claude)?.projectName == "coucou")
-            check("no duplicate entry", reg.liveCount(pill: claude) == 2)
+            // An idle notification from Locker must not take the name back.
+            reg.note(pill: claude, display: display("locker", "locker"), working: false, now: t0 + 3)
+            check("a notification from idle Locker keeps GA's name",
+                  reg.displayOwner(of: claude)?.session == "ga")
 
-            reg.takeDisplay(pill: claude, session: "ghost")
-            check("an unknown session takes nothing", reg.displayOwner(of: claude)?.session == "a")
-            reg.takeDisplay(pill: "agent_cursor", session: "a")
-            check("nor does an empty pill come alive", reg.liveCount(pill: "agent_cursor") == 0)
+            _ = reg.endTurn(pill: claude, session: "ga", now: t0 + 4)
+            check("all idle: the session that worked last keeps the name",
+                  reg.displayOwner(of: claude)?.session == "ga")
 
-            _ = reg.endSession(pill: claude, session: "a")
-            check("B inherits when A ends", reg.displayOwner(of: claude)?.projectName == "lokil")
+            reg.note(pill: claude, display: display("locker", "locker"), working: true, now: t0 + 5)
+            check("Locker works again: Locker's name",
+                  reg.displayOwner(of: claude)?.session == "locker")
+        }
+
+        do {
+            var reg = PillSessionRegistry()
+            reg.note(pill: claude, display: display("a", "coucou"), working: false)
+            reg.note(pill: claude, display: display("b", "lokil"), working: false)
+            check("no turn seen yet: the oldest owns the name",
+                  reg.displayOwner(of: claude)?.session == "a")
         }
 
         // ── empty cwd must not erase a known one ────────────────────────────────
@@ -183,7 +196,9 @@ enum PillSessionRegistryTests {
             check("B's Stop reaches the pill again",
                   reg.endTurn(pill: claude, session: "b", now: late) == .pill)
             check("A is still live", reg.liveCount(pill: claude) == 2)
-            check("A still owns the display", reg.displayOwner(of: claude)?.session == "a")
+            // A went silent mid-turn; B is the one that just worked, so the name is B's.
+            check("B, which worked last, owns the display",
+                  reg.displayOwner(of: claude)?.session == "b")
         }
 
         // ── a SessionEnd that never arrives must not pin the card forever ──────

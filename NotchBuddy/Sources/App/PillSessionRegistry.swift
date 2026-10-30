@@ -53,11 +53,13 @@ struct PillSessionRegistry {
         var bundleId: String
         var isWorking: Bool
         var lastSeen: Date
+        /// Last time the session was mid-turn or ended a turn. A stray notification
+        /// from an idle session does not move it, unlike `lastSeen`.
+        var lastWorked: Date = .distantPast
     }
 
     private struct Pill {
-        /// Live sessions. The first one owns name and cwd: the one that spoke
-        /// last, else the oldest.
+        /// Live sessions, oldest first.
         var order: [String] = []
         var sessions: [String: Session] = [:]
     }
@@ -83,18 +85,9 @@ struct PillSessionRegistry {
         if !display.cwd.isEmpty { session.cwd = display.cwd }
         if display.hostApp != nil { session.hostApp = display.hostApp }
         if !display.bundleId.isEmpty { session.bundleId = display.bundleId }
-        if working { session.isWorking = true }
+        if working { session.isWorking = true; session.lastWorked = now }
         session.lastSeen = now
         p.sessions[display.session] = session
-        pills[pill] = p
-    }
-
-    /// Hands the pill's name and cwd to a live session: the one whose prompt,
-    /// tool call or answer the card now shows. A session not live here is ignored.
-    mutating func takeDisplay(pill: String, session: String) {
-        guard var p = pills[pill], p.sessions[session] != nil else { return }
-        p.order.removeAll { $0 == session }
-        p.order.insert(session, at: 0)
         pills[pill] = p
     }
 
@@ -110,6 +103,7 @@ struct PillSessionRegistry {
         sweep(&p, now: now)
         p.sessions[session]?.isWorking = false
         p.sessions[session]?.lastSeen = now
+        p.sessions[session]?.lastWorked = now
         if p.order.isEmpty { pills.removeValue(forKey: pill) } else { pills[pill] = p }
         return p.sessions.values.contains(where: \.isWorking) ? .sessionOnly : .pill
     }
@@ -131,12 +125,18 @@ struct PillSessionRegistry {
 
     // MARK: - Reading
 
-    /// The session whose project name and cwd the pill shows. Ownership goes
-    /// to the session that spoke last (else the oldest live one), so the name
-    /// always matches the step under it. Opening a session doesn't move it.
+    /// The session whose project name and cwd the pill shows, so the name matches
+    /// the activity under it: the oldest session that is mid-turn (it keeps the
+    /// name while parallel sessions work, so it does not flip between them), else
+    /// the one that worked last, else the oldest live one.
     func displayOwner(of pill: String) -> Display? {
-        guard let p = pills[pill], let id = p.order.first,
-              let session = p.sessions[id] else { return nil }
+        guard let p = pills[pill] else { return nil }
+        let working = p.order.first { p.sessions[$0]?.isWorking == true }
+        // max(by:) keeps the first of equal elements: with no turn seen yet, the oldest.
+        let lastWorked = p.order.max {
+            (p.sessions[$0]?.lastWorked ?? .distantPast) < (p.sessions[$1]?.lastWorked ?? .distantPast)
+        }
+        guard let id = working ?? lastWorked, let session = p.sessions[id] else { return nil }
         return Display(session: id, projectName: session.projectName, cwd: session.cwd,
                        hostApp: session.hostApp, bundleId: session.bundleId)
     }
@@ -146,6 +146,13 @@ struct PillSessionRegistry {
     func ownsDisplay(pill: String, session: String) -> Bool {
         guard let owner = displayOwner(of: pill) else { return true }
         return owner.session == session
+    }
+
+    /// What `session` shows behind `pill`: its project name, cwd and terminal. nil if not live there.
+    func display(pill: String, session: String) -> Display? {
+        guard let s = pills[pill]?.sessions[session] else { return nil }
+        return Display(session: session, projectName: s.projectName, cwd: s.cwd,
+                       hostApp: s.hostApp, bundleId: s.bundleId)
     }
 
     func liveCount(pill: String) -> Int { pills[pill]?.order.count ?? 0 }
