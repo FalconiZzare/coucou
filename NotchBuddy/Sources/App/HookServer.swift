@@ -78,6 +78,7 @@ final class HookServer: @unchecked Sendable {
         case "agent_copilot": return "Handled in Copilot CLI."
         case "agent_muse":    return "Handled in Muse Code."
         case "agent_hermes":  return "Handled in Hermes."
+        case "agent_antigravity": return "Handled in Antigravity."
         default:              return "Handled in \(claudeHostName(pill: pill))."
         }
     }
@@ -92,6 +93,7 @@ final class HookServer: @unchecked Sendable {
         case "agent_copilot": return "Still waiting in Copilot CLI."
         case "agent_muse":    return "Still waiting in Muse Code."
         case "agent_hermes":  return "Still waiting in Hermes."
+        case "agent_antigravity": return "Still waiting in Antigravity."
         default:              return "Still waiting in \(claudeHostName(pill: pill))."
         }
     }
@@ -160,6 +162,10 @@ final class HookServer: @unchecked Sendable {
             if state.focusId == entry.displayPill, state.tasks.contains(where: { $0.id == prev }) {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { state.focusId = prev }
             }
+        }
+        if questions.head != nil {
+            showQuestionHead()
+            return
         }
         if let note {
             state.noteMessage = note
@@ -304,7 +310,9 @@ final class HookServer: @unchecked Sendable {
     private func showQuestionHead() {
         let state = AppState.shared
         state.waitingQuestions = questions.entries
-        guard let head = questions.head, shownQuestion != head.id else { return }
+        guard let head = questions.head else { return }
+        let needsDisplay = shownQuestion != head.id || state.view != .question
+        guard needsDisplay else { return }
         shownQuestion = head.id
         state.pendingQuestion = head.question
         state.isPinned = true
@@ -347,7 +355,8 @@ final class HookServer: @unchecked Sendable {
         closeQuestionCard(pill: entry.displayPill)
     }
 
-    /// No question left: close the card and give the focus back.
+    /// No question left: close the card and give the focus back, or return to
+    /// an approval waiting behind it (#851).
     @MainActor
     private func closeQuestionCard(pill: String?) {
         let state = AppState.shared
@@ -359,6 +368,17 @@ final class HookServer: @unchecked Sendable {
             if let pill, state.focusId == pill, state.tasks.contains(where: { $0.id == prev }) {
                 withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { state.focusId = prev }
             }
+        }
+        if let head = approvals.head {
+            state.pendingApproval = ApprovalInfo(sessionId: head.sessionId, tool: head.tool,
+                                                  command: head.command, inputKey: head.inputKey,
+                                                  pillId: head.displayPill, id: head.id,
+                                                  queueCount: approvals.count,
+                                                  projectName: head.projectName)
+            state.isPinned = true
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) { state.focusId = head.displayPill }
+            expandIfNeeded(to: .approval)
+            return
         }
         state.view = state.tasks.isEmpty ? .empty : .overview
     }
@@ -415,9 +435,13 @@ final class HookServer: @unchecked Sendable {
             }
         }
         shownQuestion = nil
+        focusBeforeQuestion = nil
         state.waitingQuestions = []
         state.pendingQuestion = nil
-        for pill in Set(gone.map(\.pillId)) { syncPill(pill) }
+        for pill in Set(gone.map(\.pillId)) {
+            syncPill(pill)
+            clearPillBadge(id: pill)
+        }
     }
 
     /// Called by QuestionView "Reply in terminal" button: question `id` (the card's when nil)
@@ -428,6 +452,9 @@ final class HookServer: @unchecked Sendable {
         guard let entry = waitingQuestion(id) else { return }
         removeQuestion(id: entry.id, answer: #"{"permissionDecision":"ask"}"#)
     }
+
+    /// The events that mean an agent is working with you (MachineVitals' work streak).
+    private static let workEvents: Set<String> = ["UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "Stop"]
 
     /// Returns the tool_input serialized as sorted-keys JSON, "" if absent or empty.
     /// Same computation used in processPermissionRequest and processEvent to match PostToolUse.
@@ -567,6 +594,25 @@ final class HookServer: @unchecked Sendable {
 
         let eventName = payload["hook_event_name"] as? String ?? ""
 
+        // Antigravity PreToolUse: its hook waits for an answer. "ask" right away leaves the tool
+        // to Antigravity's own rules and prompt; a command it has no rule for waits for a click
+        // in the notch when that is turned on in Settings.
+        if coucouKind == "agy_pre_tool" {
+            let gate = Self.agyApprovalGate(payload)
+            Task { @MainActor in
+                self.processEvent(name: eventName, payload: payload)
+                if let gate {
+                    self.processAgyApproval(fd: fd, payload: payload, command: gate.command,
+                                            waitSeconds: gate.waitSeconds)
+                }
+            }
+            if gate == nil {
+                sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
+                close(fd)
+            }
+            return
+        }
+
         if eventName == "PermissionRequest" {
             // Hold fd open — Claude Code waits for our decision (up to 120s)
             Task { @MainActor in self.processPermissionRequest(fd: fd, payload: payload) }
@@ -601,6 +647,11 @@ final class HookServer: @unchecked Sendable {
         let termProgram = payload["term_program"] as? String ?? ""
         let bundleId    = payload["bundle_id"]    as? String ?? ""
         let tty         = payload["tty"]          as? String ?? ""
+        #if !APPSTORE
+        if (name == "SessionStart" || name == "UserPromptSubmit") && (payload["coucou_agent"] as? String ?? "").isEmpty {
+            SessionLauncher.shared.remember(folder: cwd, terminal: bundleId)
+        }
+        #endif
 
         // Cursor identified solely by its stable Electron bundle ID.
         // ToDesktop builds other apps too — do not match on "todesktop" alone.
@@ -692,6 +743,7 @@ final class HookServer: @unchecked Sendable {
         // the session it shows, its steps and state; a session waiting for you keeps that state.
         let key = recapSessionId
         let now = Date()
+        if Self.workEvents.contains(name) { MachineVitals.shared.agentWorked() }
         func note(_ change: (inout BoardSession) -> Void = { _ in }) {
             record(pill: agentId, session: key, raw: sessionId, title: projectName, change)
         }
@@ -731,6 +783,8 @@ final class HookServer: @unchecked Sendable {
             }
             RecapStore.shared.userPromptSubmit(sessionId: recapSessionId, pillId: agentId, project: projectName)
             NotificationCenter.default.post(name: .checkMondayRecap, object: nil)
+            // A new turn: the finished card would show the prompt as if it were the answer.
+            if state.mode == .expanded && state.view == .finished && state.focusId == agentId { state.view = .overview }
             if state.isPresent { expandIfNeeded(to: .overview) }
 
         case "PreToolUse":
@@ -812,6 +866,7 @@ final class HookServer: @unchecked Sendable {
             syncPill(agentId)
             let finished = board.poppedPill(pill: agentId, session: key) ?? agentId
             if !terminalInFront { SoundEngine.shared.play("finish") }
+            AppReview.noteFinished()
             if !terminalInFront && showsAlert(for: finished, focused: state.focusId == finished) {
                 expandIfNeeded(to: .finished)
             } else {
@@ -910,16 +965,20 @@ final class HookServer: @unchecked Sendable {
     /// ID format: "agent_<name>" — never collides with "integration_*" pills.
     /// Inserted right after integration_claude so it appears in the visible prefix(4).
     @MainActor
-    private func upsertExternalAgent(id: String, name: String) {
+    private func upsertExternalAgent(id: String, name: String, bundleId: String) {
         let state = AppState.shared
-        guard state.tasks.firstIndex(where: { $0.id == id }) == nil else { return }
+        if let existingIdx = state.tasks.firstIndex(where: { $0.id == id }) {
+            if !bundleId.isEmpty { state.tasks[existingIdx].sessionBundleId = bundleId }
+            return
+        }
         let color: String
         if let def = PillCatalog.definition(for: id) {
             color = def.color
         } else {
             color = IslandConst.colorForProject(name)
         }
-        let task = AgentTask(id: id, name: name, color: color, state: .idle, steps: [], source: .agent)
+        var task = AgentTask(id: id, name: name, color: color, state: .idle, steps: [], source: .agent)
+        if !bundleId.isEmpty { task.sessionBundleId = bundleId }
         if let claudeIdx = state.tasks.firstIndex(where: { $0.id == "integration_claude" }) {
             state.tasks.insert(task, at: claudeIdx + 1)
         } else {
@@ -990,7 +1049,8 @@ final class HookServer: @unchecked Sendable {
 
     @MainActor
     private func processStatusLine(payload: [String: Any]) {
-        guard let usage = ClaudePlanGauge.parse(payload: payload) else { return }
+        guard let incoming = ClaudePlanGauge.parse(payload: payload) else { return }
+        let usage = ClaudePlanGauge.merge(AppState.shared.claudePlanUsage, with: incoming)
         // Claude Code calls the status line several times a second: publish (and save to
         // UserDefaults) only when the numbers change, or every 30 s for "updated … ago".
         if let cur = AppState.shared.claudePlanUsage,
@@ -1155,6 +1215,114 @@ final class HookServer: @unchecked Sendable {
         showApprovalHead()
     }
 
+    // MARK: - Antigravity command approval (blocking — its PreToolUse hook waits)
+
+    /// UserDefaults key of Settings → Antigravity → Approve commands from the notch.
+    static let agyApprovalsKey = "agyApprovalsEnabled"
+
+    /// Antigravity's PreToolUse hook needs this long (seconds) for a card to wait for a click:
+    /// the hooks Coucou wrote before had 10 s and must be installed again.
+    static let agyApprovalHookTimeout = 120
+
+    /// The command to put on a card, and how long it may wait, when Antigravity is about to
+    /// run a shell command it has no rule for; nil when Antigravity decides on its own.
+    /// Runs on the socket's thread: reads UserDefaults and Antigravity's small config files.
+    private static func agyApprovalGate(_ payload: [String: Any]) -> (command: String, waitSeconds: Double)? {
+        #if APPSTORE
+        return nil
+        #else
+        guard UserDefaults.standard.bool(forKey: agyApprovalsKey),
+              payload["coucou_agent"] as? String == "antigravity" else { return nil }
+        let tool = payload["tool_name"] as? String ?? ""
+        guard tool == "run_command" || tool.hasSuffix(":run_command") else { return nil }
+        let input = payload["tool_input"] as? [String: Any] ?? [:]
+        let command = (input["command"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !command.isEmpty else { return nil }
+        // Coucou gives up 10 s before Antigravity stops waiting for the hook.
+        guard let timeout = agyPreToolTimeout(), timeout >= agyApprovalHookTimeout else { return nil }
+        let rules = AgyPermissionRules.load(cwd: payload["cwd"] as? String ?? "")
+        guard rules.verdict(for: command) == .unknown else { return nil }
+        return (command, min(Double(timeout - 10), 110))
+        #endif
+    }
+
+    /// Antigravity is waiting on its PreToolUse hook for a command: puts it on the approval
+    /// card. Allow and Deny answer the hook; Reply in terminal, the timeout or Antigravity
+    /// giving up hand the choice back to Antigravity's own prompt.
+    @MainActor
+    private func processAgyApproval(fd: Int32, payload: [String: Any], command: String, waitSeconds: Double) {
+        let sessionId = payload["session_id"] as? String ?? "unknown"
+        let cwd = payload["cwd"] as? String ?? ""
+        let projectName = sessionName(payload, cwd: cwd)
+        let pillId = "agent_antigravity"
+        let tool = payload["tool_name"] as? String ?? "run_command"
+        let inputKey = Self.approvalInputKey(payload["tool_input"] as? [String: Any] ?? [:])
+        nbLog("Antigravity command waits for the notch [\(sessionId.prefix(8))]")
+
+        let entry = QueuedApproval(id: UUID(), fd: fd, sessionId: sessionId, pillId: pillId,
+                                   projectName: projectName, cwd: cwd, tool: tool,
+                                   command: command, inputKey: inputKey)
+        guard approvals.enqueue(entry) == .accepted else {
+            nbLog("Antigravity command: \(ApprovalQueue.maxPending) already waiting, asked in Antigravity")
+            Task.detached { [weak self] in
+                self?.sendLine(fd: fd, text: #"{"permissionDecision":"ask"}"#)
+                close(fd)
+            }
+            return
+        }
+        // Tells the hook the card is up, so it waits for a click instead of giving up after a
+        // few seconds. Written before anything else can answer or close this fd.
+        sendLine(fd: fd, text: #"{"pending":true}"#)
+        activeSessionId = sessionId
+
+        // Same display as the session's other events (processEvent: an external agent pill).
+        upsertTask(pill: pillId,
+                   display: PillSessionRegistry.Display(session: sessionId, projectName: "antigravity",
+                                                        cwd: "", hostApp: nil,
+                                                        bundleId: payload["bundle_id"] as? String ?? ""),
+                   working: true, externalAgent: "antigravity")
+        AppState.shared.updateTask(id: pillId, state: .approval)
+        SoundEngine.shared.play("approval")
+
+        // The hook hung up (Antigravity stopped waiting, or the turn was cancelled): drop the
+        // card. The cancel handler closes the fd — never close it anywhere else.
+        let entryId = entry.id
+        let source = DispatchSource.makeReadSource(fileDescriptor: fd, queue: .main)
+        source.setEventHandler { [weak self] in
+            guard let self, self.approvals.contains(id: entryId) else { return }
+            self.removeApproval(id: entryId, note: self.handledNote(pill: pillId))
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        approvalSources[entryId] = source
+
+        // Give up before Antigravity does: the hook then answers "ask" and Antigravity asks itself.
+        DispatchQueue.main.asyncAfter(deadline: .now() + waitSeconds) { [weak self] in
+            guard let self, self.approvals.contains(id: entryId) else { return }
+            self.removeApproval(id: entryId, note: self.waitingNote(pill: pillId))
+        }
+
+        showApprovalHead()
+    }
+
+    #if !APPSTORE
+    /// Timeout (seconds) of Coucou's PreToolUse hook in ~/.gemini/config/hooks.json, nil if absent.
+    static func agyPreToolTimeout() -> Int? {
+        guard let data = try? Data(contentsOf: agyHooksURL),
+              let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+              let coucou = root["coucou"] as? [String: Any],
+              let groups = coucou["PreToolUse"] as? [[String: Any]] else { return nil }
+        for group in groups {
+            for hook in group["hooks"] as? [[String: Any]] ?? [] {
+                guard let cmd = hook["command"] as? String, cmd.contains("nb-hook") else { continue }
+                // Antigravity's default when no timeout is written is 30 s.
+                return (hook["timeout"] as? NSNumber)?.intValue ?? 30
+            }
+        }
+        return nil
+    }
+    #endif
+
     /// Called by ApprovalView buttons and the iPhone. Writes the decision to the waiting
     /// nb-hook of request `id` — the one that was on screen. A click that lands after the
     /// card moved on to another request is ignored, so it can never answer the wrong one.
@@ -1196,9 +1364,9 @@ final class HookServer: @unchecked Sendable {
         case "plan_change":  json = #"{"permissionDecision":"change_plan"}"#
         default:       json = #"{"permissionDecision":"deny"}"#
         }
-        // The recap only counts allow / always / deny.
+        // The recap only counts allow / always / deny ("ask" hands the choice back to the agent).
         let recapDecision = ["plan_auto": "allow", "plan_default": "allow", "plan_change": "deny"][decision] ?? decision
-        RecapStore.shared.recordDecision(pillId: head.pillId, decision: recapDecision)
+        if decision != "ask" { RecapStore.shared.recordDecision(pillId: head.pillId, decision: recapDecision) }
         removeApproval(id: head.id, answer: json)
         if decision == "plan_change" { ClaudeHost.activate(head.hostApp) }
     }
@@ -1340,7 +1508,7 @@ final class HookServer: @unchecked Sendable {
                             working: Bool, externalAgent: String?) {
         sessions.note(pill: pill, display: display, working: working)
         if let externalAgent {
-            upsertExternalAgent(id: pill, name: externalAgent)
+            upsertExternalAgent(id: pill, name: externalAgent, bundleId: display.bundleId)
         } else {
             upsertWorkspaceTask(id: pill, projectName: display.projectName, cwd: display.cwd,
                                 hostApp: display.hostApp, bundleId: display.bundleId,
@@ -1601,6 +1769,14 @@ final class HookServer: @unchecked Sendable {
     /// either a PermissionRequest hook with timeout < 120s, or the AskUserQuestion
     /// PreToolUse matcher is missing (requires Claude Code 2.1.85+).
     static func hooksNeedUpdate() -> Bool {
+        #if APPSTORE
+        // Sandboxed: ~/.claude can't be read here (homeDirectoryForCurrentUser is the
+        // container). The relay script written at install carries the version it was
+        // written with: an older one (1.1 wrote none) misses plan approval, session titles
+        // and Claude Desktop routing, so Settings offers "Update hooks".
+        guard UserDefaults.standard.bool(forKey: "coucouHooksInstalled") else { return false }
+        return UserDefaults.standard.integer(forKey: appStoreHookVersionKey) < appStoreHookVersion
+        #else
         let settingsURL = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
         guard let data = try? Data(contentsOf: settingsURL),
@@ -1638,7 +1814,15 @@ final class HookServer: @unchecked Sendable {
             if !hasAskEntry { return true }
         }
         return false
+        #endif
     }
+
+    #if APPSTORE
+    /// Bump when nbHookPythonAppStore or the hooks written by buildHooksData change in a way
+    /// the installed copy must catch up with. 1.1 wrote no version (0); 2.0 is 2.
+    static let appStoreHookVersion = 2
+    static let appStoreHookVersionKey = "coucouAppStoreHookVersion"
+    #endif
 
     // MARK: - Claude Code settings.json hook installer
 
@@ -1882,6 +2066,14 @@ final class HookServer: @unchecked Sendable {
         let settingsURL = claudeURL.appendingPathComponent("settings.json")
         try ClaudeSettingsFile.write(data, to: settingsURL, expecting: original)
         UserDefaults.standard.set(true, forKey: "coucouHooksInstalled")
+        UserDefaults.standard.set(Self.appStoreHookVersion, forKey: Self.appStoreHookVersionKey)
+    }
+
+    /// The settings.json Coucou would write, to show before writing (CLAUDE.md: never
+    /// write ~/.claude/settings.json without showing the change first).
+    func previewClaudeHooksAppStore(claudeURL: URL) throws -> String {
+        let (data, _) = try buildHooksData(claudeURL: claudeURL)
+        return String(data: data, encoding: .utf8) ?? ""
     }
 
     func uninstallClaudeHooksAppStore(claudeURL: URL) throws {
@@ -2162,11 +2354,13 @@ final class HookServer: @unchecked Sendable {
         let base = hookBase()
         // PreToolUse / PostToolUse: tool-level hooks — use matcher group
         // PreInvocation / PostInvocation / Stop: lifecycle hooks — direct handler, no matcher
+        // PreToolUse may wait for a click in the notch (Approve commands from the notch):
+        // it answers in a moment otherwise, so the long timeout costs nothing.
         var coucou: [String: Any] = [:]
         for event in ["PreToolUse", "PostToolUse"] {
             let hook: [String: Any] = ["type": "command",
                                        "command": "\(base) --agent antigravity \(event)",
-                                       "timeout": 10]
+                                       "timeout": event == "PreToolUse" ? Self.agyApprovalHookTimeout : 10]
             coucou[event] = [["matcher": "*", "hooks": [hook]]]
         }
         for event in ["PreInvocation", "PostInvocation", "Stop"] {
@@ -2959,7 +3153,7 @@ export default function (amp: any): void {
 # Session/tool events → Coucou notch (fire-and-forget, never blocks).
 # Approval transport: uses register_approval_transport when available (future Hermes),
 # falls back to pre_approval_request observer-only hook (hermes 0.15.x).
-import json, subprocess, threading
+import json, os, subprocess, threading
 from pathlib import Path
 
 HOOK = Path('\(path)')
@@ -2981,6 +3175,7 @@ def _fire(fields: dict) -> None:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,   # detach from process group
+                env={'__CFBundleIdentifier': 'com.nousresearch.hermes', **os.environ},
             )
             p.stdin.write(json.dumps(fields).encode() + b'\\n')
             p.stdin.close()
@@ -3469,11 +3664,14 @@ if [ -n "$out" ]; then
     printf '%s\\n' "$out"
 else
     # Copilot is fail-closed — must always output valid JSON even when python3 is absent or crashes.
-    _cop=0; _perm=0
+    # Antigravity needs a decision on PreToolUse: "ask" leaves it to its own rules and prompt.
+    _cop=0; _perm=0; _agy=0; _pre=0
     for _a in "$@"; do
         case "$_a" in
             copilot) _cop=1 ;;
+            antigravity) _agy=1 ;;
             permissionRequest|PermissionRequest) _perm=1 ;;
+            PreToolUse) _pre=1 ;;
         esac
     done
     if [ "$_cop" -eq 1 ]; then
@@ -3482,6 +3680,8 @@ else
         else
             printf '{}\\n'
         fi
+    elif [ "$_agy" -eq 1 ] && [ "$_pre" -eq 1 ]; then
+        printf '{"decision":"ask"}\\n'
     fi
 fi
 exit 0
@@ -3493,7 +3693,8 @@ private let nbHookPythonGitHub = """
 #!/usr/bin/env python3
 # nb-hook.py — Coucou hook relay for Claude Code and third-party agents (GitHub version)
 # Reads JSON from stdin, forwards to Coucou via Unix socket, translates response.
-import sys, json, os, socket, subprocess
+import sys, json, os, socket, stat, subprocess
+from pathlib import Path
 
 def session_tty():
     # The session's terminal tab ("/dev/ttys004"), as Terminal.app names its tabs. Hooks run
@@ -3513,6 +3714,156 @@ def session_tty():
             return ''
         pid = int(out[1])
     return ''
+
+# --- Codex automatic-review detection ---------------------------------------
+# The Coucou hook runs before Codex's native approval routing. When a turn's
+# approvals reviewer is automatic, Codex resolves the request on its own, so
+# those PermissionRequests must not reach the notch: nobody should answer them.
+# Only a positively proven automatic turn (or Codex's internal Guardian reviewer
+# session) returns True; anything human, unknown, malformed or per-call MCP
+# returns False and keeps the existing relay behaviour.
+
+_AUTO_REVIEWERS = ('auto_review', 'strict_auto_review')
+_HEADER_MAX_BYTES = 1024 * 1024            # first record: session_meta
+_TAIL_MAX_BYTES = 8 * 1024 * 1024          # recent turn_context records
+
+
+def _codex_under(path, directory):
+    try:
+        path.relative_to(directory)
+        return True
+    except ValueError:
+        return False
+
+
+def _codex_read_segment(fd, offset, limit):
+    os.lseek(fd, offset, os.SEEK_SET)
+    chunks = []
+    remaining = limit
+    while remaining > 0:
+        chunk = os.read(fd, min(65536, remaining))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b''.join(chunks)
+
+
+def _codex_complete_lines(blob, skip_first):
+    # Only newline-terminated records count: a cut-off line is not a record.
+    if skip_first and blob:
+        newline = blob.find(b'\\n')
+        blob = b'' if newline < 0 else blob[newline + 1:]
+    end = blob.rfind(b'\\n')
+    if end < 0:
+        return []
+    return blob[:end].split(b'\\n')
+
+
+def _codex_parse_record(line):
+    # One complete JSON line -> dict, or None when malformed.
+    try:
+        record = json.loads(line.decode('utf-8'))
+    except Exception:
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def _codex_records(lines):
+    for line in lines:
+        if not line:
+            continue
+        if b'session_meta' not in line and b'turn_context' not in line:
+            continue
+        record = _codex_parse_record(line)
+        if record is not None:
+            yield record
+
+
+def _codex_read_rollout(path):
+    # Returns (session_meta payload or None, list of turn_context payloads).
+    # Reads are bounded: the first _HEADER_MAX_BYTES and the last _TAIL_MAX_BYTES.
+    flags = os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0)
+    fd = os.open(path, flags)
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode):
+            return None, []
+        size = info.st_size
+        header = _codex_read_segment(fd, 0, _HEADER_MAX_BYTES)
+        tail_start = size - min(size, _TAIL_MAX_BYTES)
+        tail = _codex_read_segment(fd, tail_start, _TAIL_MAX_BYTES)
+    finally:
+        os.close(fd)
+    # session_meta must be the very first complete record of the rollout; a
+    # malformed first record, or a session_meta appearing later, is not trusted.
+    meta = None
+    header_lines = _codex_complete_lines(header, False)
+    if header_lines:
+        record = _codex_parse_record(header_lines[0])
+        if (record is not None and record.get('type') == 'session_meta'
+                and isinstance(record.get('payload'), dict)):
+            meta = record['payload']
+    contexts = []
+    for record in _codex_records(_codex_complete_lines(tail, tail_start > 0)):
+        payload = record.get('payload')
+        if record.get('type') == 'turn_context' and isinstance(payload, dict):
+            contexts.append(payload)
+    return meta, contexts
+
+
+def codex_uses_automatic_review(payload, codex_home=None):
+    # True only for a proven automatic-review Codex PermissionRequest; the caller
+    # then skips the relay entirely. Unknown, malformed, missing or human-reviewed
+    # turns return False so the normal relay behaviour is preserved.
+    try:
+        if not isinstance(payload, dict):
+            return False
+        if payload.get('hook_event_name') != 'PermissionRequest':
+            return False
+        tool_name = payload.get('tool_name')
+        if not isinstance(tool_name, str) or not tool_name:
+            return False  # unknown tool -> unknown reviewer routing
+        if tool_name.startswith('mcp__'):
+            return False  # an MCP server can override the reviewer per call
+        session_id = payload.get('session_id')
+        transcript_path = payload.get('transcript_path')
+        if not isinstance(session_id, str) or not session_id:
+            return False
+        if not isinstance(transcript_path, str) or not transcript_path:
+            return False
+        home = codex_home or os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex')
+        base = Path(home).expanduser().resolve()
+        if not base.is_dir():
+            return False
+        transcript = Path(transcript_path).resolve()
+        roots = (base.joinpath('sessions').resolve(), base.joinpath('archived_sessions').resolve())
+        if not _codex_under(transcript, roots[0]) and not _codex_under(transcript, roots[1]):
+            return False
+        meta, contexts = _codex_read_rollout(str(transcript))
+        if not isinstance(meta, dict):
+            return False
+        if session_id != meta.get('id') and session_id != meta.get('session_id'):
+            return False
+        if (meta.get('thread_source') == 'guardian_review'
+                and meta.get('source') == {'subagent': {'other': 'guardian'}}):
+            # Codex internal Guardian reviewer session: proven automatic, no turn context.
+            return True
+        turn_id = payload.get('turn_id')
+        if not isinstance(turn_id, str) or not turn_id:
+            return False
+        reviewers = set()
+        for context in contexts:
+            if context.get('turn_id') != turn_id:
+                continue
+            reviewer = context.get('approvals_reviewer')
+            if not isinstance(reviewer, str) or reviewer not in _AUTO_REVIEWERS:
+                return False  # human, unknown or conflicting evidence for this turn
+            reviewers.add(reviewer)
+        return len(reviewers) == 1
+    except Exception:
+        return False
+
 
 def normalize_event(name):
     mapping = {
@@ -3773,7 +4124,56 @@ def main():
     event = payload.get('hook_event_name', '')
     # socket_path is already defined above
 
+    # Antigravity runs its PreToolUse hook before its own permission check, and waits for it.
+    # Coucou answers at once unless the notch shows the command (Settings → Antigravity →
+    # Approve commands from the notch): then {"pending":true} comes first, the click later.
+    # Only a click on Allow prints "allow"; anything else ("ask", no answer, Coucou closed)
+    # leaves the tool to Antigravity's own rules and prompt.
+    if agent == 'antigravity' and event == 'PreToolUse':
+        out = {'decision': 'ask'}
+        try:
+            payload['coucou_kind'] = 'agy_pre_tool'
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(3)
+            s.connect(socket_path)
+            s.sendall((json.dumps(payload) + '\\n').encode())
+            buf = b''
+            reply = None
+            while reply is None:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                while reply is None and b'\\n' in buf:
+                    line, buf = buf.split(b'\\n', 1)
+                    obj = json.loads(line.decode() or '{}')
+                    if isinstance(obj, dict) and obj.get('pending'):
+                        s.settimeout(115)  # the card is up; Coucou gives up first
+                    else:
+                        reply = obj
+            s.close()
+            decision = reply.get('permissionDecision', '') if isinstance(reply, dict) else ''
+            if decision in ('allow', 'always'):
+                out = {'decision': 'allow'}
+            elif decision == 'deny':
+                out = {'decision': 'deny', 'reason': 'Denied from Coucou'}
+        except Exception:
+            pass
+        sys.stdout.write(json.dumps(out) + '\\n')
+        sys.stdout.flush()
+        sys.exit(0)
+
     if event == 'PermissionRequest':
+        # Codex automatic review: this hook runs before Codex's native automatic
+        # routing, so relaying these requests would show an approval card nobody
+        # should answer. Suppress only proven automatic turns, before any socket
+        # connection; human, unknown and per-call MCP requests keep the relay.
+        if agent == 'codex':
+            try:
+                if codex_uses_automatic_review(payload):
+                    sys.exit(0)  # empty stdout — Codex proceeds with its own reviewer
+            except Exception:
+                pass
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)
         try:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -3867,12 +4267,8 @@ def main():
     except Exception:
         pass  # Always exit cleanly — never block the agent
 
-    # Antigravity needs a decision on PreToolUse ({} reads as a denial). "ask" keeps its own
-    # permission prompt (and the user's Always Allow); Coucou never allows a tool by itself.
-    if agent == 'antigravity' and event == 'PreToolUse':
-        sys.stdout.write('{"decision":"ask"}\\n')
-        sys.stdout.flush()
-    elif agent in ('gemini', 'antigravity', 'muse', 'copilot'):
+    # Antigravity's PreToolUse is answered above; its other events, like Gemini CLI's, read "{}".
+    if agent in ('gemini', 'antigravity', 'muse', 'copilot'):
         sys.stdout.write('{}\\n')
         sys.stdout.flush()
 
@@ -4147,6 +4543,45 @@ def main():
     event = payload.get('hook_event_name', '')
     # socket_path is already defined above
 
+    # Antigravity runs its PreToolUse hook before its own permission check, and waits for it.
+    # Coucou answers at once unless the notch shows the command (Settings → Antigravity →
+    # Approve commands from the notch): then {"pending":true} comes first, the click later.
+    # Only a click on Allow prints "allow"; anything else ("ask", no answer, Coucou closed)
+    # leaves the tool to Antigravity's own rules and prompt.
+    if agent == 'antigravity' and event == 'PreToolUse':
+        out = {'decision': 'ask'}
+        try:
+            payload['coucou_kind'] = 'agy_pre_tool'
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.settimeout(3)
+            s.connect(socket_path)
+            s.sendall((json.dumps(payload) + '\\n').encode())
+            buf = b''
+            reply = None
+            while reply is None:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                buf += chunk
+                while reply is None and b'\\n' in buf:
+                    line, buf = buf.split(b'\\n', 1)
+                    obj = json.loads(line.decode() or '{}')
+                    if isinstance(obj, dict) and obj.get('pending'):
+                        s.settimeout(115)  # the card is up; Coucou gives up first
+                    else:
+                        reply = obj
+            s.close()
+            decision = reply.get('permissionDecision', '') if isinstance(reply, dict) else ''
+            if decision in ('allow', 'always'):
+                out = {'decision': 'allow'}
+            elif decision == 'deny':
+                out = {'decision': 'deny', 'reason': 'Denied from Coucou'}
+        except Exception:
+            pass
+        sys.stdout.write(json.dumps(out) + '\\n')
+        sys.stdout.flush()
+        sys.exit(0)
+
     if event == 'PermissionRequest':
         # Block and wait for Coucou's decision (Claude Code allows up to 120s)
         try:
@@ -4240,12 +4675,8 @@ def main():
     except Exception:
         pass  # Always exit cleanly — never block the agent
 
-    # Antigravity needs a decision on PreToolUse ({} reads as a denial). "ask" keeps its own
-    # permission prompt (and the user's Always Allow); Coucou never allows a tool by itself.
-    if agent == 'antigravity' and event == 'PreToolUse':
-        sys.stdout.write('{"decision":"ask"}\\n')
-        sys.stdout.flush()
-    elif agent in ('gemini', 'antigravity', 'muse', 'copilot'):
+    # Antigravity's PreToolUse is answered above; its other events, like Gemini CLI's, read "{}".
+    if agent in ('gemini', 'antigravity', 'muse', 'copilot'):
         sys.stdout.write('{}\\n')
         sys.stdout.flush()
 

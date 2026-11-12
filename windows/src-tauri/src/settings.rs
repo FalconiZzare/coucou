@@ -19,6 +19,7 @@ pub struct Settings {
     /// Hovering the island opens it all the way, and it folds again shortly
     /// after the pointer leaves (the Mac's "Open on hover"). Off by default.
     pub open_on_hover: bool,
+    pub alerts_from_all_pills: bool,
     pub absence_interval: f64,
     pub active_integrations: Vec<String>,
     /// The always-on workspace pill (src/core/pills.ts checks it is one).
@@ -32,6 +33,8 @@ pub struct Settings {
     /// Show the Claude plan pill (5 h and weekly limits) in the island's header.
     /// Off until the user turns it on, so the header stays as it shipped.
     pub show_plan_in_notch: bool,
+    /// Show the Claude plan percentage in the compact island next to the agent dots.
+    pub show_plan_in_compact_island: bool,
     /// Coucou's status line relay is the one in Claude Code's settings.json.
     /// Like `hooks_installed`, the real state wins at launch over what was stored.
     pub plan_relay_installed: bool,
@@ -105,6 +108,18 @@ pub struct Settings {
     pub phone_relay_url: String,
     /// The date and time in the middle of the compact island. Off by default.
     pub show_clock: bool,
+    /// What the closed island shows at the top of the screen, where the Mac
+    /// has its notch: "mochi" (the Mac's island on a screen without a notch),
+    /// "time", "datetime", "claude" (the plan's usage), "music" (what plays),
+    /// "empty" (the black shape alone) or "hidden" (nothing; the top edge of
+    /// the screen wakes it). Kept as it comes, like `mochi_outfit`: the island
+    /// reads what it doesn't know as "mochi".
+    pub closed_island: String,
+    /// Settings → Agents → Antigravity → Approve commands from the notch: a shell command
+    /// none of Antigravity's rules covers waits for Allow / Deny on the island
+    /// (agy_approvals.rs). Off by default; owned by the Rust side like `phone_link`, so
+    /// what a webview sends back is ignored. The Mac's key is the same.
+    pub agy_approvals_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -135,6 +150,7 @@ impl Default for Settings {
             sound_volume: 0.12,
             auto_close_interval: 15.0,
             open_on_hover: false,
+            alerts_from_all_pills: false,
             absence_interval: 180.0,
             active_integrations: vec![
                 "integration_resend".into(),
@@ -148,6 +164,7 @@ impl Default for Settings {
             hooks_installed: false,
             model: default_model(),
             show_plan_in_notch: false,
+            show_plan_in_compact_island: false,
             plan_relay_installed: false,
             show_codex_plan_in_notch: false,
             chat_provider: crate::chat::ANTHROPIC.into(),
@@ -173,6 +190,8 @@ impl Default for Settings {
             phone_relay: false,
             phone_relay_url: String::new(),
             show_clock: false,
+            closed_island: "mochi".into(),
+            agy_approvals_enabled: false,
         }
     }
 }
@@ -439,6 +458,7 @@ mod tests {
   "soundVolume": 0.5,
   "autoCloseInterval": 30.0,
   "openOnHover": true,
+  "alertsFromAllPills": true,
   "absenceInterval": 60.0,
   "activeIntegrations": ["integration_notion"],
   "mainPill": "agent_cursor",
@@ -447,6 +467,7 @@ mod tests {
   "hooksInstalled": true,
   "model": "some-model",
   "showPlanInNotch": true,
+  "showPlanInCompactIsland": true,
   "planRelayInstalled": true,
   "showCodexPlanInNotch": true,
   "chatProvider": "ollama",
@@ -471,7 +492,9 @@ mod tests {
   "phoneServices": ["integration_stripe"],
   "phoneRelay": true,
   "phoneRelayUrl": "wss://relay.example.workers.dev",
-  "showClock": true
+  "showClock": true,
+  "closedIsland": "music",
+  "agyApprovalsEnabled": true
 }"##;
 
     fn custom() -> Value {
@@ -958,6 +981,7 @@ mod tests {
                 "soundVolume",
                 "autoCloseInterval",
                 "openOnHover",
+                "alertsFromAllPills",
                 "absenceInterval",
                 "activeIntegrations",
                 "mainPill",
@@ -966,6 +990,7 @@ mod tests {
                 "hooksInstalled",
                 "model",
                 "showPlanInNotch",
+                "showPlanInCompactIsland",
                 "planRelayInstalled",
                 "showCodexPlanInNotch",
                 "chatProvider",
@@ -991,6 +1016,8 @@ mod tests {
                 "phoneRelay",
                 "phoneRelayUrl",
                 "showClock",
+                "closedIsland",
+                "agyApprovalsEnabled",
             ]
         );
         let _ = std::fs::remove_dir_all(&dir);

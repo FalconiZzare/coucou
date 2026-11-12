@@ -43,7 +43,7 @@ pub struct IntegrationEvent {
     pub detail: Option<String>,
 }
 
-fn emit(app: &AppHandle, update: IntegrationUpdate) {
+pub(crate) fn emit(app: &AppHandle, update: IntegrationUpdate) {
     let _ = app.emit_to(WINDOW_LABEL, "integration", update);
 }
 
@@ -72,12 +72,12 @@ pub fn start(app: AppHandle) {
     spawn(app.clone(), "integration_gitlab", 7, 300, poll_gitlab);
     spawn(app.clone(), "integration_gitea", 7, 300, poll_gitea);
     spawn_github_loops(app.clone());
-    spawn(app.clone(), "integration_calcom", 8, 300, poll_calcom);
+    spawn(app.clone(), "integration_calcom", 8, 300, crate::calcom::poll);
     spawn(app, "integration_notion", 9, 300, poll_notion);
 }
 
 /// True when the user has this integration switched on in settings.
-fn enabled(app: &AppHandle, id: &str) -> bool {
+pub(crate) fn enabled(app: &AppHandle, id: &str) -> bool {
     app.try_state::<crate::Shared>()
         .map(|shared| {
             let settings = shared.settings.lock().unwrap();
@@ -123,7 +123,7 @@ pub async fn poll_once(app: AppHandle, id: &str) {
         "integration_n8n" => poll_n8n(app).await,
         "integration_resend" => poll_resend(app).await,
         "integration_notion" => poll_notion(app).await,
-        "integration_calcom" => poll_calcom(app).await,
+        "integration_calcom" => crate::calcom::poll(app).await,
         _ => {}
     }
 }
@@ -213,14 +213,100 @@ fn gitea_ci(state: Option<&str>) -> CiState {
     }
 }
 
+pub(crate) fn gitea_workflow_ci(status: Option<&str>, conclusion: Option<&str>) -> CiState {
+    let s = status.map(str::to_ascii_lowercase);
+    let c = conclusion.map(str::to_ascii_lowercase);
+
+    match (s.as_deref(), c.as_deref()) {
+        (Some("completed") | Some("done"), Some("success")) => CiState::Success,
+        (
+            Some("completed") | Some("done"),
+            Some("failure") | Some("timed_out") | Some("cancelled") | Some("action_required"),
+        ) => CiState::Failure,
+        (Some("completed") | Some("done"), Some("skipped") | Some("neutral")) => CiState::Success,
+        (
+            Some(
+                "running"
+                | "in_progress"
+                | "queued"
+                | "waiting"
+                | "pending"
+                | "blocked"
+                | "requested",
+            ),
+            _,
+        ) => CiState::Pending,
+        _ => match (s.as_deref(), c.as_deref()) {
+            (Some("success"), _) | (_, Some("success")) => CiState::Success,
+            (Some("failure"), _) | (_, Some("failure")) => CiState::Failure,
+            (Some("pending"), _) | (_, Some("pending")) => CiState::Pending,
+            _ => CiState::Unknown,
+        },
+    }
+}
+
+async fn gitea_actions_ci(
+    http: &reqwest::Client,
+    token: &str,
+    base: &str,
+    repo: &str,
+    branch: &str,
+) -> Option<(CiState, Option<String>)> {
+    let url = format!("{base}/repos/{repo}/actions/runs?branch={branch}&page=1&limit=5");
+    let resp = http
+        .get(url)
+        .header("Authorization", format!("token {token}"))
+        .send()
+        .await
+        .ok()?;
+    if !resp.status().is_success() {
+        return None;
+    }
+    let body: Value = resp.json().await.ok()?;
+    let runs = if let Some(arr) = body.get("workflow_runs").and_then(Value::as_array) {
+        arr.as_slice()
+    } else if let Some(arr) = body.as_array() {
+        arr.as_slice()
+    } else {
+        &[]
+    };
+
+    let target = runs.iter().find(|r| {
+        r.get("head_branch")
+            .and_then(Value::as_str)
+            .map_or(true, |b| b.eq_ignore_ascii_case(branch))
+    })?;
+
+    let status = target.get("status").and_then(Value::as_str);
+    let conclusion = target.get("conclusion").and_then(Value::as_str);
+    let head_sha = target
+        .get("head_sha")
+        .and_then(Value::as_str)
+        .map(str::to_string);
+    let ci = gitea_workflow_ci(status, conclusion);
+    if ci != CiState::Unknown {
+        Some((ci, head_sha))
+    } else {
+        None
+    }
+}
+
 async fn gitea_main_ci(http: &reqwest::Client, token: &str, base: &str, repos: &[Value]) -> Vec<GitHubRepoCi> {
     let mut out = Vec::new();
     for repo in repos.iter().take(20) {
         let Some(name) = repo.get("full_name").and_then(Value::as_str) else { continue };
         let branch = repo.get("default_branch").and_then(Value::as_str).unwrap_or("main");
         let statuses = gitea_get(http, token, format!("{base}/repos/{name}/commits/{branch}/statuses?limit=1&sort=recentupdate")).await;
+        let mut ci = gitea_ci(statuses.first().and_then(|s| s.get("state")).and_then(Value::as_str));
+        let mut head_sha = None;
+        if ci == CiState::Unknown {
+            if let Some((action_ci, action_sha)) = gitea_actions_ci(http, token, base, name, branch).await {
+                ci = action_ci;
+                head_sha = action_sha;
+            }
+        }
         out.push(GitHubRepoCi { repo: name.to_string(), url: repo.get("html_url").and_then(Value::as_str).unwrap_or("").to_string(),
-            branch: branch.to_string(), ci: gitea_ci(statuses.first().and_then(|s| s.get("state")).and_then(Value::as_str)), head_sha: None });
+            branch: branch.to_string(), ci, head_sha });
     }
     out
 }
@@ -1060,65 +1146,6 @@ fn parse_notion_page(obj: &Value) -> Option<Value> {
 
 // ── Cal.com ───────────────────────────────────────────────────────────────────
 
-async fn poll_calcom(app: AppHandle) {
-    let Some(key) = secrets::get("calcom-api-key") else { return };
-    let response = client()
-        .get("https://api.cal.com/v2/bookings?status=upcoming")
-        .header("Authorization", format!("Bearer {key}"))
-        .header("cal-api-version", "2024-08-13")
-        .send()
-        .await;
-    let Ok(response) = response else { return };
-    if !response.status().is_success() {
-        emit(&app, IntegrationUpdate {
-            id: "integration_calcom",
-            data: json!({}),
-            error: Some(status_error(response.status().as_u16(), &crate::i18n::t("Key lacks access"))),
-            event: None,
-        });
-        return;
-    }
-    let json: Value = response.json().await.unwrap_or(json!({}));
-    let bookings: Vec<Value> = json
-        .get("data")
-        .and_then(Value::as_array)
-        .map(|list| {
-            list.iter()
-                .filter_map(|b| {
-                    let start = b
-                        .get("start")
-                        .or_else(|| b.get("startTime"))
-                        .and_then(Value::as_str)?;
-                    let attendee = b.get("attendees").and_then(Value::as_array).and_then(|a| a.first());
-                    let notes = b
-                        .get("responses")
-                        .and_then(|r| r.get("notes"))
-                        .and_then(|n| n.get("value"))
-                        .and_then(Value::as_str)
-                        .or_else(|| b.get("description").and_then(Value::as_str))
-                        .filter(|s| !s.is_empty());
-                    Some(json!({
-                        "id": b.get("id").map(|v| v.to_string()).unwrap_or_default(),
-                        "title": b.get("title").and_then(Value::as_str).unwrap_or("Meeting"),
-                        "start": start,
-                        "status": b.get("status").and_then(Value::as_str).unwrap_or("accepted"),
-                        "attendeeName": attendee.and_then(|a| a.get("name")).and_then(Value::as_str),
-                        "attendeeEmail": attendee.and_then(|a| a.get("email")).and_then(Value::as_str),
-                        "attendeeNotes": notes,
-                    }))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-
-    emit(&app, IntegrationUpdate {
-        id: "integration_calcom",
-        data: json!({ "bookings": bookings }),
-        error: None,
-        event: None,
-    });
-}
-
 // ── n8n ───────────────────────────────────────────────────────────────────────
 
 async fn poll_n8n(app: AppHandle) {
@@ -1327,6 +1354,21 @@ mod tests {
         let first_day = days.iter().find(|day| day.date == "1970-01-01").unwrap();
         assert_eq!((first_day.count, first_day.level, first_day.weekday), (2, 2, 4));
         assert_eq!(activity.total, 2);
+    }
+
+    #[test]
+    fn gitea_workflow_ci_maps_runs_and_conclusions() {
+        assert_eq!(gitea_workflow_ci(Some("completed"), Some("success")), CiState::Success);
+        assert_eq!(gitea_workflow_ci(Some("completed"), Some("failure")), CiState::Failure);
+        assert_eq!(gitea_workflow_ci(Some("completed"), Some("timed_out")), CiState::Failure);
+        assert_eq!(gitea_workflow_ci(Some("completed"), Some("cancelled")), CiState::Failure);
+        assert_eq!(gitea_workflow_ci(Some("completed"), Some("skipped")), CiState::Success);
+        assert_eq!(gitea_workflow_ci(Some("running"), None), CiState::Pending);
+        assert_eq!(gitea_workflow_ci(Some("in_progress"), None), CiState::Pending);
+        assert_eq!(gitea_workflow_ci(Some("queued"), None), CiState::Pending);
+        assert_eq!(gitea_workflow_ci(Some("waiting"), None), CiState::Pending);
+        assert_eq!(gitea_workflow_ci(None, Some("success")), CiState::Success);
+        assert_eq!(gitea_workflow_ci(None, None), CiState::Unknown);
     }
 
     #[test]

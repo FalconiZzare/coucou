@@ -57,6 +57,12 @@ struct IslandViewContent: View {
             #else
             EmptyView()
             #endif
+        case .launch:
+            #if !APPSTORE
+            LaunchView(state: state)
+            #else
+            EmptyView()
+            #endif
         }
     }
 }
@@ -70,135 +76,170 @@ struct OverviewView: View {
 
     var agent: AgentTask? { state.focusTask }
 
-    var body: some View {
-        HStack(spacing: 10) {
-            // Left card: title row + ticker below + ↗ button overlay
-            ZStack(alignment: .topLeading) {
-                CardBackground(wash: nil)
+    /// The focused pill's card (the left card at the notch).
+    @ViewBuilder private var leftCard: some View {
+        ZStack(alignment: .topLeading) {
+            CardBackground(wash: nil)
 
-                // Title row + ticker stacked (or integration card)
-                if let agent = agent {
-                    if agent.isIntegration {
-                        IntegrationCardView(task: agent, showingDetail: $showingN8nDetail, onDiffTap: { diffIdx in
-                            withAnimation(.easeIn(duration: 0.16)) { activeDiffId = diffIdx }
-                        })
-                    } else {
-                        VStack(alignment: .leading, spacing: 0) {
-                            HStack(spacing: 6) {
-                                Circle()
-                                    .fill(Color(hex: agent.color))
-                                    .frame(width: 7, height: 7)
-                                Text(agent.name)
-                                    .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(Color(hex: "#F5F6F8"))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                    .layoutPriority(1)
-                                Text({ () -> String in
-                                    switch agent.source {
-                                    case .claudeCode: return "Claude Code"
-                                    case .agent:      return "Agent"
-                                    case .n8n:        return "n8n"
-                                    }
-                                }())
-                                    .font(.system(size: 11))
-                                    .foregroundColor(Color(hex: "#8E939C"))
-                                    .lineLimit(1)
-                                    .truncationMode(.tail)
-                                Spacer(minLength: 2)
-                                if agent.steps.count > 1 && agent.sessionLines.isEmpty {
-                                    Text("\(min(agent.stepIndex + 1, agent.steps.count))/\(agent.steps.count)")
-                                        .font(.system(size: 11))
-                                        .foregroundColor(Color(hex: "#6B7079"))
-                                        .fixedSize()
+            // Title row + ticker stacked (or integration card)
+            if let agent = agent {
+                if agent.isIntegration {
+                    IntegrationCardView(task: agent, showingDetail: $showingN8nDetail, onDiffTap: { diffIdx in
+                        withAnimation(.easeIn(duration: 0.16)) { activeDiffId = diffIdx }
+                    })
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(Color(hex: agent.color))
+                                .frame(width: 7, height: 7)
+                            Text(agent.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Color(hex: "#F5F6F8"))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .layoutPriority(1)
+                            Text({ () -> String in
+                                switch agent.source {
+                                case .claudeCode: return "Claude Code"
+                                case .agent:      return "Agent"
+                                case .n8n:        return "n8n"
                                 }
+                            }())
+                                .font(.system(size: 11))
+                                .foregroundColor(Color(hex: "#8E939C"))
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 2)
+                            if agent.steps.count > 1 && agent.sessionLines.isEmpty {
+                                Text("\(min(agent.stepIndex + 1, agent.steps.count))/\(agent.steps.count)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(Color(hex: "#6B7079"))
+                                    .fixedSize()
                             }
+                        }
+                        .padding(.top, 6)
+                        .padding(.leading, 108)
+                        .padding(.trailing, 36)
+
+                        // Several sessions share the pill: one line each, instead of the steps.
+                        Group {
+                            if agent.sessionLines.isEmpty {
+                                TickerView(task: agent, onDiffTap: { diffIdx in
+                                    withAnimation(.easeIn(duration: 0.16)) { activeDiffId = diffIdx }
+                                })
+                            } else {
+                                SessionLinesView(lines: agent.sessionLines)
+                            }
+                        }
+                            .frame(height: 44)
                             .padding(.top, 6)
                             .padding(.leading, 108)
-                            .padding(.trailing, 36)
-
-                            // Several sessions share the pill: one line each, instead of the steps.
-                            Group {
-                                if agent.sessionLines.isEmpty {
-                                    TickerView(task: agent, onDiffTap: { diffIdx in
-                                        withAnimation(.easeIn(duration: 0.16)) { activeDiffId = diffIdx }
-                                    })
-                                } else {
-                                    SessionLinesView(lines: agent.sessionLines)
-                                }
-                            }
-                                .frame(height: 44)
-                                .padding(.top, 6)
-                                .padding(.leading, 108)
-                                .padding(.trailing, 12)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(.top, 4)
+                            .padding(.trailing, 12)
                     }
-                }
-
-                // Plan detail overlays on top of normal content (GitHub build, home view only)
-                #if !APPSTORE
-                if state.showingPlanDetail {
-                    CardBackground(wash: nil)
-                    Group {
-                        if state.planDetailIsCodex {
-                            CodexPlanCardView(usage: state.codexPlanUsage)
-                        } else {
-                            // Claude and Codex both on: the header shows only the Claude pill,
-                            // Codex is a third row here that opens its own card.
-                            let bothPlans = state.showPlanInNotch && state.planRelayInstalled
-                                && state.showCodexPlanInNotch
-                            ClaudePlanCardView(usage: state.claudePlanUsage,
-                                               codexRow: bothPlans,
-                                               codexUsage: state.codexPlanUsage,
-                                               onCodex: {
-                                                   withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
-                                                       state.planDetailIsCodex = true
-                                                   }
-                                                   state.refreshCodexPlanUsage()
-                                               })
-                        }
-                    }
-                    .transition(.opacity)
-                }
-                #endif
-
-                // Diff overlay — replaces ticker when a diff step is tapped
-                if let diffId = activeDiffId,
-                   let task = agent,
-                   let diff = state.sessionDiffs[task.pill]?.first(where: { $0.id == diffId }) {
-                    CardBackground(wash: nil)
-                    DiffCardView(diff: diff, onDismiss: { activeDiffId = nil })
-                        .transition(.opacity)
-                }
-
-                // ↗ jump button — last in ZStack so it renders on top; hidden while any detail is open
-                #if !APPSTORE
-                let hideJumpButton = showingN8nDetail || state.showingPlanDetail || activeDiffId != nil
-                #else
-                let hideJumpButton = showingN8nDetail || activeDiffId != nil
-                #endif
-                if !hideJumpButton {
-                    Button(action: { openAgentTarget(agent) }) {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 8, weight: .medium))
-                            .foregroundColor(Color(hex: "#5F646D"))
-                            .frame(width: 16, height: 16)
-                            .background(Color.white.opacity(0.07))
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.top, 8)
-                    .padding(.trailing, 10)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .padding(.top, 4)
                 }
             }
-            .frame(width: 322)
 
-            // Right card: agent pills
-            CardBackground(wash: nil) {
-                AgentPillsView(state: state)
+            // Plan detail overlays on top of normal content (GitHub build, home view only)
+            #if !APPSTORE
+            if state.showingPlanDetail {
+                CardBackground(wash: nil)
+                Group {
+                    if state.planDetailIsCodex {
+                        CodexPlanCardView(usage: state.codexPlanUsage)
+                    } else {
+                        // Claude and Codex both on: the header shows only the Claude pill,
+                        // Codex is a third row here that opens its own card.
+                        let bothPlans = state.showPlanInNotch && state.planRelayInstalled
+                            && state.showCodexPlanInNotch
+                        ClaudePlanCardView(usage: state.claudePlanUsage,
+                                           codexRow: bothPlans,
+                                           codexUsage: state.codexPlanUsage,
+                                           onCodex: {
+                                               withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                                                   state.planDetailIsCodex = true
+                                               }
+                                               state.refreshCodexPlanUsage()
+                                           })
+                    }
+                }
+                .transition(.opacity)
+            }
+            #endif
+
+            // Diff overlay — replaces ticker when a diff step is tapped
+            if let diffId = activeDiffId,
+               let task = agent,
+               let diff = state.sessionDiffs[task.pill]?.first(where: { $0.id == diffId }) {
+                CardBackground(wash: nil)
+                DiffCardView(diff: diff, onDismiss: { activeDiffId = nil })
+                    .transition(.opacity)
+            }
+
+            // ↗ jump button — last in ZStack so it renders on top; hidden while any detail is open
+            #if !APPSTORE
+            let hideJumpButton = showingN8nDetail || state.showingPlanDetail || activeDiffId != nil
+                || agent?.id == CoucoudoroController.pillId
+            #else
+            let hideJumpButton = showingN8nDetail || activeDiffId != nil
+                || agent?.id == CoucoudoroController.pillId
+            #endif
+            if !hideJumpButton {
+                Button(action: { openAgentTarget(agent) }) {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 8, weight: .medium))
+                        .foregroundColor(Color(hex: "#5F646D"))
+                        .frame(width: 16, height: 16)
+                        .background(Color.white.opacity(0.07))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 8)
+                .padding(.trailing, 10)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+        }
+    }
+
+    /// Open in a corner: the card beside Mochi and his circle (CornerArcView, drawn over the
+    /// island), full height. The cards keep room on their left for Mochi at the notch; here it
+    /// is cut off, so they start at the card's edge.
+    private var cornerBody: some View {
+        let placement = state.islandPlacement
+        let shift: CGFloat = 96
+        return GeometryReader { geo in
+            let cardW = max(200, geo.size.width - IslandPlacement.cornerColumn)
+            leftCard
+                .frame(width: cardW + shift, height: geo.size.height)
+                .offset(x: -shift)
+                .frame(width: cardW, height: geo.size.height, alignment: .leading)
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .contentShape(Rectangle())
+                .frame(maxWidth: .infinity, maxHeight: .infinity,
+                       alignment: placement.isLeft ? .trailing : .leading)
+        }
+    }
+
+    var body: some View {
+        Group {
+            if state.islandPlacement.isCorner {
+                cornerBody
+            } else {
+                // Top-aligned: a mail open in the Mail card makes the left card taller, downwards
+                // only; the pills on the right keep their place and their height (98 pt).
+                HStack(alignment: .top, spacing: 10) {
+                    // Left card: title row + ticker below + ↗ button overlay
+                    leftCard
+                        .frame(width: 322)
+
+                    // Right card: agent pills
+                    CardBackground(wash: nil) {
+                        AgentPillsView(state: state)
+                    }
+                    .frame(height: 98)
+                }
             }
         }
         .onChange(of: state.focusId) { _, new in
@@ -238,12 +279,10 @@ struct OverviewView: View {
         switch task.pill {
         case "integration_claude":
             if ClaudeHost.activate(task.hostApp, tty: task.sessionTTY) { return }
-            let vscodeBundleId = "com.microsoft.VSCode"
-            if let url = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == vscodeBundleId })?.bundleURL {
-                NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
-            } else {
-                NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/Visual Studio Code.app"))
-            }
+            // openApplication also brings a running VS Code forward; activate() is ignored on macOS 14+.
+            let vscode = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.microsoft.VSCode")
+                ?? URL(fileURLWithPath: "/Applications/Visual Studio Code.app")
+            NSWorkspace.shared.openApplication(at: vscode, configuration: .init(), completionHandler: nil)
         case "integration_resend":
             NSWorkspace.shared.open(URL(string: "https://resend.com/emails")!)
         case "integration_mail":
@@ -256,6 +295,8 @@ struct OverviewView: View {
                 NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
             }
             #endif
+        case "integration_coucoudoro":
+            break
         case "integration_crypto":
             let exchange = CryptoSettings.exchange
             if let first = CryptoSettings.coins.first,
@@ -422,7 +463,13 @@ struct ApprovalView: View {
                         let hideAlways = asking == "agent_codex"
                             || asking == "agent_copilot"
                             || asking == "agent_muse"
-                        if !hideAlways {
+                        if asking == "agent_antigravity" {
+                            // Antigravity waits on the card: this hands it back to its own
+                            // prompt in the terminal, where "Always allow" lives.
+                            SecondaryButton("Reply in terminal") {
+                                HookServer.shared.sendApprovalDecision("ask", for: shownId)
+                            }
+                        } else if !hideAlways {
                             SecondaryButton("Always") {
                                 HookServer.shared.sendApprovalDecision("always", for: shownId)
                             }
@@ -520,6 +567,8 @@ struct QuestionView: View {
                             .font(.system(size: 12))
                             .foregroundColor(Color(hex: "#F5F6F8"))
                             .focused($otherFieldFocused)
+                            // No Writing Tools button on the island's fields: it lands near the notch (#936).
+                            .writingToolsBehavior(.disabled)
                             .onAppear { otherFieldFocused = true }
                             .onSubmit { commitOtherAndProceed(q: q, qi: qi, isLast: isLast) }
                             .onExitCommand { if qi < showOther.count { showOther[qi] = false } }
@@ -628,7 +677,6 @@ struct QuestionView: View {
         .onChange(of: state.pendingQuestion) { _, _ in resetQuestionState() }
         // The next session's question can read the same as the one just answered.
         .onChange(of: state.waitingQuestions.first?.id) { _, _ in resetQuestionState() }
-        .onDisappear { HookServer.shared.releaseQuestionFD() }
     }
 
     private func resetQuestionState() {
@@ -735,12 +783,10 @@ struct ErrorView: View {
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
                         }
                     } else {
-                        #if !APPSTORE
                         PrimaryButton("Open terminal") {
                             openSessionApp(task)
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
                         }
-                        #endif
                     }
                     SecondaryButton("OK") {
                         NotificationCenter.default.post(name: .islandCollapse, object: nil)
@@ -755,8 +801,8 @@ struct ErrorView: View {
     }
 }
 
-#if !APPSTORE
 /// The app a session runs in (its terminal, VS Code or JetBrains IDE), else any known terminal.
+/// Only brings apps to the front, so the App Store build has it too.
 private func openSessionApp(_ task: AgentTask?) {
     if !(task?.pill == "integration_claude" && ClaudeHost.activate(task?.hostApp, tty: task?.sessionTTY)),
        !(task?.pill == "agent_jetbrains"
@@ -765,7 +811,6 @@ private func openSessionApp(_ task: AgentTask?) {
         NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app"))
     }
 }
-#endif
 
 /// Brings the Claude desktop app forward (or launches it) — target of the Claude Desktop pill.
 private let claudeDesktopBundleId = "com.anthropic.claudefordesktop"
@@ -802,12 +847,10 @@ struct FinishedView: View {
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
                         }
                     } else {
-                        #if !APPSTORE
                         PrimaryButton("Open terminal") {
                             openSessionApp(state.focusTask)
                             NotificationCenter.default.post(name: .islandCollapse, object: nil)
                         }
-                        #endif
                     }
                     SecondaryButton("OK") {
                         NotificationCenter.default.post(name: .islandCollapse, object: nil)
@@ -1376,9 +1419,8 @@ struct MailView: View {
 
 // MARK: - Prompt (chat)
 
-#if !APPSTORE
 /// The mic's right-click menu: Automatic (the user's languages) or one fixed language.
-private struct DictationLanguageMenu: View {
+struct DictationLanguageMenu: View {
     @Bindable var dictation: MacDictation
 
     var body: some View {
@@ -1408,7 +1450,6 @@ private struct DictationLanguageMenu: View {
         return chosen == MacDictation.automatic || automatic.contains(chosen) ? automatic : automatic + [chosen]
     }
 }
-#endif
 
 struct PromptView: View {
     @ObservedObject var state: AppState
@@ -1416,9 +1457,7 @@ struct PromptView: View {
     @FocusState private var focused: Bool
     @State private var showModelPicker = false
 
-    #if !APPSTORE
     @State private var dictation = MacDictation()
-    #endif
     var body: some View {
         ZStack(alignment: .leading) {
             CardBackground(wash: .indigo)
@@ -1470,8 +1509,11 @@ struct PromptView: View {
                     Spacer()
                 }
 
-                HStack(spacing: 0) {
+                HStack(spacing: 6) {
                     Spacer()
+                    #if !APPSTORE
+                    ChatMailToggle(state: state)
+                    #endif
                     Button {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
                             showModelPicker.toggle()
@@ -1506,9 +1548,10 @@ struct PromptView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 13))
                         .focused($focused)
+                        // No Writing Tools button on the island's fields: it lands near the notch (#936).
+                        .writingToolsBehavior(.disabled)
                         .onSubmit { sendMessage() }
 
-                    #if !APPSTORE
                     // Dictate instead of typing (on-device speech recognition when available)
                     Button {
                         Task {
@@ -1528,7 +1571,6 @@ struct PromptView: View {
                     .onChange(of: dictation.transcript) { _, _ in
                         if dictation.isRecording { text = dictation.text }
                     }
-                    #endif
 
                     Button(action: sendMessage) {
                         Image(systemName: "arrow.up")
@@ -1574,7 +1616,6 @@ struct PromptView: View {
     }
 
     private func sendMessage() {
-        #if !APPSTORE
         // Still dictating: take the final words (and the right language) before sending.
         if dictation.isRecording {
             Task {
@@ -1583,7 +1624,6 @@ struct PromptView: View {
             }
             return
         }
-        #endif
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return }
         text = ""
@@ -1787,13 +1827,28 @@ struct ChatBubble: View {
                         if isStreaming {
                             TimelineView(.periodic(from: .now, by: 0.5)) { tl in
                                 let show = Int(tl.date.timeIntervalSinceReferenceDate / 0.5).isMultiple(of: 2)
-                                Text(message.content + (show ? "▌" : " "))
+                                // A plan being written (```coucou-mail) is not shown as raw JSON.
+                                Text(MailPlanParser.extract(message.content).prose + (show ? "▌" : " "))
                                     .font(.system(size: 12.5))
                                     .foregroundColor(Color(hex: "#B0B5BE"))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         } else {
-                            ChatMarkdownView(markdown: message.content)
+                            let parsed = MailPlanParser.extract(message.content)
+                            VStack(alignment: .leading, spacing: 6) {
+                                if !parsed.prose.isEmpty {
+                                    ChatMarkdownView(markdown: parsed.prose)
+                                }
+                                #if !APPSTORE
+                                if let plan = parsed.plan {
+                                    MailPlanCard(plan: plan, messageId: message.id)
+                                } else if let error = parsed.error {
+                                    Text(String(format: String(localized: "mail.plan.error %@"), error))
+                                        .font(.system(size: 10.5))
+                                        .foregroundColor(Color(hex: "#F5A524"))
+                                }
+                                #endif
+                            }
                         }
                     }
                     .padding(.horizontal, 8).padding(.vertical, 6)
@@ -2017,6 +2072,8 @@ struct IntegrationCardView: View {
             #endif
         case "integration_crypto":
             return true  // public market data: no key, nothing to set up
+        case "integration_coucoudoro":
+            return true  // a local countdown: nothing to connect
         case "integration_portfolio":
             return PortfolioSettings.hasAnyAccount
         case "ai_anthropic":  return KeychainStore.shared.get("anthropic-api-key") != nil || AppState.shared.subscriptionReady(.anthropic)
@@ -2274,6 +2331,9 @@ struct IntegrationCardView: View {
         } else if task.id == "integration_crypto" {
             // Its own card in every state (loading, no coins, prices).
             CryptoCardView()
+                .transition(.opacity)
+        } else if task.id == CoucoudoroController.pillId {
+            CoucoudoroCardView()
                 .transition(.opacity)
         } else if task.id == "integration_portfolio" {
             PortfolioCardView()
@@ -2536,11 +2596,12 @@ struct IntegrationCardView: View {
             return
         }
 
-        // No cwd: bring the running instance forward or launch fresh
-        if let url = ids.compactMap({ id in
-            NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }
-        }).first?.bundleURL {
-            NSWorkspace.shared.openApplication(at: url, configuration: .init(), completionHandler: nil)
+        // No cwd: activate running instance or launch fresh
+        // openApplication, not activate(): macOS 14+ ignores activate() from the island.
+        if let runningURL = ids.compactMap({ id in
+            NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == id }?.bundleURL
+        }).first {
+            NSWorkspace.shared.openApplication(at: runningURL, configuration: .init(), completionHandler: nil)
             return
         }
         if let appURL = appURL {
@@ -4071,7 +4132,10 @@ struct TickerView: View {
                 rowB = steps[min(idx, steps.count - 1)]
             }
         }
-        .onChange(of: task?.steps.count) { _, _ in
+        // Watch the steps themselves, not their count: appendStep keeps at most
+        // 20, so once full the count and stepIndex stop changing while new
+        // steps keep arriving.
+        .onChange(of: task?.steps) { _, _ in
             guard let task, !task.steps.isEmpty, !isTransitioning else { return }
             let newIdx = task.stepIndex
             if displayIndex < 0 {
@@ -4080,7 +4144,7 @@ struct TickerView: View {
                 rowB = steps[min(newIdx, steps.count - 1)]
                 return
             }
-            guard newIdx != displayIndex else { return }
+            guard newIdx != displayIndex || steps[min(newIdx, steps.count - 1)] != rowB else { return }
             tickerAnimate(to: newIdx)
         }
     }
@@ -4276,7 +4340,14 @@ struct AgentPillsView: View {
     @ViewBuilder
     private func pill(_ task: AgentTask) -> some View {
         #if !APPSTORE
-        if task.id == "integration_music" {
+        if task.id == CoucoudoroController.pillId {
+            CoucoudoroPill(task: task, state: state, swapping: $swapping) {
+                swapping = true
+                state.setFocus(task.id)
+                SoundEngine.shared.play("blip")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { swapping = false }
+            }
+        } else if task.id == "integration_music" {
             MusicPill(task: task, state: state, swapping: $swapping) {
                 swapping = true
                 state.setFocus(task.id)
@@ -4299,11 +4370,20 @@ struct AgentPillsView: View {
             }
         }
         #else
-        AgentPill(task: task, state: state, swapping: $swapping) {
-            swapping = true
-            state.setFocus(task.id)
-            SoundEngine.shared.play("blip")
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { swapping = false }
+        if task.id == CoucoudoroController.pillId {
+            CoucoudoroPill(task: task, state: state, swapping: $swapping) {
+                swapping = true
+                state.setFocus(task.id)
+                SoundEngine.shared.play("blip")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { swapping = false }
+            }
+        } else {
+            AgentPill(task: task, state: state, swapping: $swapping) {
+                swapping = true
+                state.setFocus(task.id)
+                SoundEngine.shared.play("blip")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { swapping = false }
+            }
         }
         #endif
     }
@@ -5257,6 +5337,10 @@ struct SettingsIslandView: View {
     @ObservedObject var state: AppState
 
     private var claudeConnected: Bool {
+        #if APPSTORE
+        // Sandboxed: ~/.claude isn't readable here, and the hook path has no "NotchBuddy".
+        return HookServer.claudeHooksInstalled()
+        #else
         let url = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
         guard let data = try? Data(contentsOf: url),
@@ -5268,6 +5352,7 @@ struct SettingsIslandView: View {
                 ($0["command"] as? String)?.contains("NotchBuddy") == true
             } ?? false
         }
+        #endif
     }
 
     private var apiConnected: Bool {

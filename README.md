@@ -43,10 +43,10 @@ Meet **Mochi**: a soft little squircle with big eyes that pops out of your notch
 
 Since 0.4, Coucou has its own window and sits in the Dock. On the left, **Flow** — everything about your voice — and **Notch**, all the settings of the island. *(macOS, GitHub build)*
 
-- 🎙️ **Flow dictation** — hold a key anywhere on the Mac (right ⌥ by default, or fn, right ⌘ or right ⌃), speak, let go: your words are pasted where you type, in any app. Two quick taps for hands-free, Esc to cancel, ⌃⌘V to paste the last one again. Your clipboard gets back what it held.
+- 🎙️ **Flow dictation** — hold a key anywhere on the Mac (right ⌥ by default, or fn, right ⌘ or right ⌃), speak, let go: your words are pasted where you type, in any app. Two quick taps for hands-free (or one, with a setting), Esc to cancel, ⌃⌘V to paste the last one again. Your clipboard gets back what it held.
 - 💊 **The pill** — a small see-through pill at the bottom of the screen (or on its left or right edge). Hover it for a toolbar: dictate, record a call, open Coucou. While you speak, Mochi listens and nine dots follow your voice.
 - 🦜 **Parakeet, offline** — run NVIDIA's Parakeet on your Mac's Neural Engine through [FluidAudio](https://github.com/FluidInference/FluidAudio): more accurate, 25 languages, nothing leaves your Mac. One click to download (about 650 MB), Apple silicon only. Until then the Mac's own recognition is used.
-- ✍️ **Your words, your way** — a dictionary of names Coucou always spells right, replacements, snippets (say a short phrase, paste a whole text), and an optional clean-up by Claude with your own key: as said, natural or polished, per app.
+- ✍️ **Your words, your way** — a dictionary of names Coucou always spells right, replacements, snippets (say a short phrase, paste a whole text), and an optional clean-up by Claude, on your Claude plan through Claude Code or with your own key: as said, natural or polished, per app.
 - 📝 **Notetaker** — click Record a call: Coucou records your microphone and what your Mac plays, no bot joins the call. Then you get the transcript person by person, a summary, the key points and the to-dos, written by Claude with your key or by Apple Intelligence on your Mac. The audio is deleted once the transcript is written. Tell the people in the call that you record.
 - 📊 **Statistics** — words dictated, time saved, words per minute, days in a row and the apps you dictate in. Counted on your Mac, never sent anywhere.
 
@@ -71,6 +71,7 @@ Flow dictation and the Notetaker are on the Mac for now; Windows and Linux are n
 - 📊 **Claude plan usage** *(macOS, GitHub build)* — a small pill in the notch header shows your 5-hour and weekly Claude plan limits. Enable it from Settings → Agents → Plan usage. Pro and Max plans only.
 - 📊 **Codex plan usage** *(macOS, GitHub build)* — a Codex pill next to it shows your Codex limits and how many free resets you have left, read from the Codex CLI. Turn it on in Settings → Agents → Plan usage.
 - 📋 **Declare the tools you use** — open Settings → Active pills and pick your main workspace tool (VS Code, Cursor, JetBrains, Codex or Antigravity), then toggle up to 4 more: Gemini CLI, Anthropic, Google AI, OpenAI, Ollama, LM Studio and service integrations *(macOS)*.
+- ✉️ **Mail in the notch** *(macOS GitHub build: Apple Mail; Windows: classic Outlook)* — search every inbox and filter (Unread, Important, Today), read a message and act on it: reply, mark as read, important, junk. Coucou → Mail sorts new messages for you with your rules, banned words and VIPs, every action listed with Undo; nothing is ever deleted. Turn on **Mail** in the chat and the AI can prepare a plan — sorting, reply drafts, a mail merge with each recipient's page of a PDF — that runs only when you click Run.
 - 📎 **Drop a file on the notch** — Mochi turns into a box and swallows it, then ask a question about it or send it by email *(email: macOS, Mail.app)*.
 - 🖥️ **Mochi on the desktop** — drag Mochi out of the island to set him loose on your desktop: he floats as a 120 pt companion, follows your cursor, wears his outfit, reacts to alerts by flying home and flying back, and comes back where you left him on next launch.
 - 🪟 **Drag Mochi onto any window** — attach that window as context for Claude *(macOS)*.
@@ -83,6 +84,8 @@ Flow dictation and the Notetaker are on the Mac for now; Windows and Linux are n
 - 🔊 **Your own sounds** *(macOS)* — drop a file named like one of Mochi's sounds (`finish.wav`, `approval.mp3`…) in Settings → General → Sound → **Open sounds folder** to replace it.
 - 🗣️ **« OK Coucou »** *(macOS, GitHub build)* — talk to Mochi like Jarvis. Say « OK Coucou », then ask: « how much did I make on Stripe today? », « swap GitHub for Stripe », « play some Daft Punk », « who won the game last night? », « send an email to Enzo to tell him the image is ready ». Claude is the brain (your own Anthropic API key, set in Settings → Chat); speech recognition runs on your Mac, and only your words and the data Coucou reads to answer go to Anthropic, never audio. Mochi listens, thinks and answers out loud; emails open in the notch and leave only when you click Send. Settings → Voice.
 - 🎙️ **Dictate in the chat** *(macOS, GitHub build)* — click the mic next to the chat field and talk in any of your languages (Coucou picks the one you spoke, or right-click the mic to choose); speech recognition runs on your Mac when it supports it.
+- ↘️ **The notch or a corner** *(macOS, GitHub build)* — put Coucou in any corner of the screen: drag Mochi there, or Settings → General → Display → Position. A small tile with Mochi at rest; open, the other pills sit on a quarter circle around him.
+- 🔎 **Search the settings** — type in the Coucou window's sidebar to find any setting *(macOS GitHub build, Windows, Linux)*.
 - 🫥 **Invisible when idle** — hides away when nothing is running, peeks out when you hover the notch (the top edge of the screen on Windows and Linux).
 - 🖥️ **Any Mac, notch or not** — on an iMac, a Mac mini, or a MacBook with its lid closed on an external display, Mochi sits in a small bar at the top of the screen. With several displays, pick his screen in Settings → General, or let him follow your mouse *(macOS)*.
 - 📱 **Coucou on iPhone** — your sessions, approvals and services in your pocket, with Live Activities, widgets and Siri. See [Coucou on iPhone](#coucou-on-iphone).
@@ -148,6 +151,9 @@ macOS releases are published as `v*` tags. See [CHANGELOG.md](CHANGELOG.md) for 
 
 | Version | Date | Highlights |
 |---------|------|------------|
+| [0.6.0](https://github.com/Louis-CFM/coucou/releases/tag/v0.6.0) | Nov 12, 2026 | Start a Claude Code session from the notch, drop a file on a session, ⌘⇧2 screenshot copied, approve Antigravity commands, Android phone link, Coucoudoro |
+| [0.5.8](https://github.com/Louis-CFM/coucou/releases/tag/v0.5.8) | Oct 31, 2026 | Fixes by @Ohualtex: approvals and questions stay put, desktop Mochi stays visible, dropped files no longer overwrite each other |
+| [0.5.7](https://github.com/Louis-CFM/coucou/releases/tag/v0.5.7) | Oct 31, 2026 | Mail in the notch: search, filters, reading, automatic sorting with rules and Undo, mail plans from the chat; search the settings; Coucou in a corner of the screen |
 | [0.5.6](https://github.com/Louis-CFM/coucou/releases/tag/v0.5.6) | Oct 30, 2026 | Chat on your own AI subscription (Claude Code, Antigravity, Gemini CLI, Codex, Cursor, Copilot), switched on in Settings → Chat; Korean and Japanese |
 | [0.5.5](https://github.com/Louis-CFM/coucou/releases/tag/v0.5.5) | Oct 29, 2026 | Chat on your Claude plan with no API key; each session apart behind its pill, questions side by side; Claude Code on a remote machine |
 | [0.5.4](https://github.com/Louis-CFM/coucou/releases/tag/v0.5.4) | Oct 29, 2026 | Reliability: 25 community fixes — the hook server never gives up, your own hooks stay untouched, no crash without a mic, truer n8n, Stripe and GitHub pills |
@@ -176,6 +182,9 @@ Windows and Linux are released together, under the `windows-v*` and `linux-v*` t
 
 | Windows & Linux | Date | Highlights |
 |---------|------|------------|
+| 0.5.9 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.9) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.9) | Nov 3, 2026 | The island never disappears (Mochi or the time when closed), ✕ to fold it, dictation keeps your language, your own dictation key, silence while you speak |
+| 0.5.8 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.8) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.8) | Oct 31, 2026 | 14 fixes and features by @Ohualtex: permission requests queue, Claude Desktop cards and pill, plan usage in the compact island, Flow pill in a corner |
+| 0.5.7 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.7) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.7) | Oct 31, 2026 | Mail with classic Outlook on Windows: search, filters, automatic sorting, mail plans from the chat; search the settings |
 | 0.5.6 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.6) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.6) | Oct 30, 2026 | Chat on your own AI subscription (Claude Code, Antigravity, Gemini CLI, Codex, Cursor, Copilot); Korean and Japanese |
 | 0.5.5 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.5) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.5) | Oct 29, 2026 | No API key? Your own Claude Code answers the chat, Flow's clean-up and the notes of a call, on your Claude plan |
 | 0.5.4 · [Windows](https://github.com/Louis-CFM/coucou/releases/tag/windows-v0.5.4) · [Linux](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.4) | Oct 29, 2026 | Reliability: 25 community fixes — the hook server never gives up, approval cards go when the terminal takes over, a sturdier Flow pill, WhatsApp group names |
@@ -208,7 +217,7 @@ Nothing is written to disk during the demo — no Keychain entries, no hook file
 
 Coucou is coming to the **Mac App Store** and the **iPhone App Store**: one click to install, automatic updates, and the iPhone app pairs with your Mac through your iCloud account, with nothing to configure. The links will be here as soon as Apple publishes them.
 
-The App Store build of the Mac app runs in Apple's sandbox, so a few features stay in the GitHub build: Claude plan usage, the Apple Music pill and attaching the front window to the chat.
+The App Store build of the Mac app runs in Apple's sandbox, so some features stay in the GitHub build: agents other than Claude Code, Cursor and Claude Desktop (Codex, Gemini CLI, Antigravity, Copilot CLI…), Claude and Codex plan usage, the chat through your AI subscription, the Coucou window (Flow dictation, the Notetaker, settings search), « OK Coucou », Mail, WhatsApp, Apple Music, Spotify, the Portfolio pill, screen capture, attaching the front window to the chat, and updates from inside the app (the App Store updates it).
 
 ### iPhone
 
@@ -255,7 +264,7 @@ Download **[Coucou-Windows.msi](https://github.com/Louis-CFM/coucou/releases/dow
 
 This is only because the app isn't signed with a paid certificate yet. Coucou is open source, and Microsoft Defender scans the installer as clean.
 
-**Windows and Linux 0.5.6** chat on your own AI subscription (Claude Code, Antigravity, Gemini CLI, Codex, Cursor, Copilot) and speak Korean and Japanese. **0.5.5** answer on your Claude plan through Claude Code when no API key is saved. **0.5.4** bring 25 reliability fixes from the community. **0.5.3** bring **WhatsApp** to the island (experimental), with the gateway installed in one click. **0.5.2** turn Mochi blue when a new version waits and show what it brings after the update; they add **GitLab and Gitea** pills. **0.5.1** tell you when a new version is out (once you agree) and, on Windows, install it in one click; they also speak German and Turkish. **0.5.0** caught up with the Mac: Coucou is now an app with its own window in the taskbar, **Flow dictation** anywhere (hold right Ctrl, speak, let go) with Parakeet running offline on your computer, the **Notetaker** for your calls, and **« OK Coucou »** to talk to Mochi, powered by Claude with your key. On Linux, dictation works on X11 and Wayland. 0.4.0 paired with [Coucou for Android](#coucou-for-android): approve, answer and chat from your Android phone (Settings → Android phone, off by default). 0.3.0 added open on hover, your own sounds, a colour of your own for each Mochi and the Mochi-to-desktop shortcut; on Linux, the Spotify pill with Mochi dancing to it, global shortcuts on Wayland and "Open terminal" that brings the terminal forward. 0.2.0 caught up with the Mac: Codex, Copilot CLI, Muse Code and six more agents with approvals from the island, answers to Claude's questions, live diffs, GitHub pull requests and CI, plan usage, local models, the wardrobe, Mochi on the desktop, keyboard shortcuts, the weekly recap and 10 languages. See the [changelog](CHANGELOG.md).
+**Windows and Linux 0.5.9** keep a small island at the top of the screen once it is closed (Mochi, the time or your Claude usage in it), fold it with ✕, keep your language when you dictate, take any dictation key you like and, on Windows, quiet the other apps while you speak. **0.5.8** bring 14 fixes and features by @Ohualtex: permission requests wait their turn, Claude Desktop cards on Windows and its pill on Linux, plan usage in the compact island. **0.5.7** bring **Mail** to Windows with classic Outlook (search, automatic sorting, mail plans from the chat) and a search field for the settings. **0.5.6** chat on your own AI subscription (Claude Code, Antigravity, Gemini CLI, Codex, Cursor, Copilot) and speak Korean and Japanese. **0.5.5** answer on your Claude plan through Claude Code when no API key is saved. **0.5.4** bring 25 reliability fixes from the community. **0.5.3** bring **WhatsApp** to the island (experimental), with the gateway installed in one click. **0.5.2** turn Mochi blue when a new version waits and show what it brings after the update; they add **GitLab and Gitea** pills. **0.5.1** tell you when a new version is out (once you agree) and, on Windows, install it in one click; they also speak German and Turkish. **0.5.0** caught up with the Mac: Coucou is now an app with its own window in the taskbar, **Flow dictation** anywhere (hold right Ctrl, speak, let go) with Parakeet running offline on your computer, the **Notetaker** for your calls, and **« OK Coucou »** to talk to Mochi, powered by Claude with your key. On Linux, dictation works on X11 and Wayland. 0.4.0 paired with [Coucou for Android](#coucou-for-android): approve, answer and chat from your Android phone (Settings → Android phone, off by default). 0.3.0 added open on hover, your own sounds, a colour of your own for each Mochi and the Mochi-to-desktop shortcut; on Linux, the Spotify pill with Mochi dancing to it, global shortcuts on Wayland and "Open terminal" that brings the terminal forward. 0.2.0 caught up with the Mac: Codex, Copilot CLI, Muse Code and six more agents with approvals from the island, answers to Claude's questions, live diffs, GitHub pull requests and CI, plan usage, local models, the wardrobe, Mochi on the desktop, keyboard shortcuts, the weekly recap and 10 languages. See the [changelog](CHANGELOG.md).
 
 There is no notch on a PC, so the island slides out of the top edge of the screen
 instead of hiding inside one. See [`windows/README.md`](windows/README.md) for the
@@ -265,17 +274,74 @@ rest of the differences.
 
 ### Linux
 
-**Coucou for Linux 0.5.6** is out (x86_64): [AppImage](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.6/Coucou-Linux-0.5.6-x86_64.AppImage) · [.deb](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.6/Coucou-Linux-0.5.6-amd64.deb) · [.rpm](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.6/Coucou-Linux-0.5.6-x86_64.rpm) · [all files and checksums](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.6). The newest AppImage is always at [`linux-latest`](https://github.com/Louis-CFM/coucou/releases/download/linux-latest/Coucou-Linux-x86_64.AppImage).
+**Coucou for Linux 0.5.9** is out (x86_64): [AppImage](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.9/Coucou-Linux-0.5.9-x86_64.AppImage) · [.deb](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.9/Coucou-Linux-0.5.9-amd64.deb) · [.rpm](https://github.com/Louis-CFM/coucou/releases/download/linux-v0.5.9/Coucou-Linux-0.5.9-x86_64.rpm) · [all files and checksums](https://github.com/Louis-CFM/coucou/releases/tag/linux-v0.5.9). The newest AppImage is always at [`linux-latest`](https://github.com/Louis-CFM/coucou/releases/download/linux-latest/Coucou-Linux-x86_64.AppImage).
 
 - **AppImage** (any distribution): `chmod +x Coucou-Linux-*.AppImage`, then run it.
 - **Debian / Ubuntu**: `sudo apt install ./Coucou-Linux-*.deb`
 - **Fedora / openSUSE**: `sudo dnf install ./Coucou-Linux-*.rpm`
 
-Check a download with `sha256sum -c SHA256SUMS --ignore-missing`. On Arch Linux, build it with the [PKGBUILD](linux/arch/PKGBUILD).
+Check a download with `sha256sum -c SHA256SUMS --ignore-missing`. On Arch Linux, build it with the [PKGBUILD](linux/arch/PKGBUILD); on NixOS, use the [flake](#nixos).
 
 The island sits on the top edge on compositors with layer-shell — COSMIC, KDE
 Plasma, Hyprland, Sway and other wlroots compositors. GNOME has no layer-shell,
 so there it runs through XWayland as a dock window at the top of the screen. See [`windows/README.md`](windows/README.md#linux).
+
+### NixOS
+
+Coucou has a Nix flake for `x86_64-linux` and `aarch64-linux`. It builds Coucou from source on your machine, so the first build takes a while (about 20 minutes on a laptop, mostly Rust).
+
+**Try it** without installing anything:
+
+```bash
+nix run github:Louis-CFM/coucou
+```
+
+Flakes not turned on yet? Add `--extra-experimental-features 'nix-command flakes'` after `nix`.
+
+**Install it** from your system flake:
+
+```nix
+{
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    coucou.url = "github:Louis-CFM/coucou";
+  };
+
+  outputs = { nixpkgs, coucou, ... }: {
+    nixosConfigurations.my-machine = nixpkgs.lib.nixosSystem {
+      modules = [
+        ./configuration.nix
+        ({ pkgs, ... }: {
+          environment.systemPackages = [
+            coucou.packages.${pkgs.stdenv.hostPlatform.system}.default
+          ];
+        })
+      ];
+    };
+  };
+}
+```
+
+Then `sudo nixos-rebuild switch`. With Home Manager, the same package goes in `home.packages`. To build it against your own nixpkgs rather than the one pinned in Coucou's `flake.lock`, add `coucou.inputs.nixpkgs.follows = "nixpkgs";` (the flake is tested with nixos-unstable).
+
+**Or through the overlay**, as `pkgs.coucou`. Your nixpkgs then has to allow it (see *License* below):
+
+```nix
+nixpkgs.overlays = [ coucou.overlays.default ];
+nixpkgs.config.allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [ "coucou" ];
+environment.systemPackages = [ pkgs.coucou ];
+```
+
+**Update** with `nix flake update coucou`, then rebuild. The input follows `main`; to stay on releases, point it at a tag instead, like `github:Louis-CFM/coucou/linux-v0.6.0` (from the first release that has the flake). Coucou's own update card only links to the release page on Linux, so it never touches your system.
+
+**Good to know**
+
+- **License.** The package is marked unfree: the code is MIT, but the name, Mochi, the icon and the sounds are not (see [LICENSE-ASSETS.md](LICENSE-ASSETS.md)). Building it for yourself is allowed, which is what the flake does; it also keeps Coucou off public binary caches. The flake's `packages` allow it on their own; with the overlay, your config decides.
+- **Claude Code hooks** work as on any Linux. Coucou copies its relay to `~/.local/share/coucou/bin/` at each launch, so the hooks in `~/.claude/settings.json` keep working across updates and garbage collections. **Start at login** and the shortcut commands in Settings use `coucou` from your `PATH`, for the same reason.
+- **API keys** go to the Secret Service. GNOME and Plasma have one; on Hyprland, Sway and other window managers, add `services.gnome.gnome-keyring.enable = true;`.
+- **On Wayland**, Flow dictation and global shortcuts go through `xdg-desktop-portal`, which the NixOS GNOME, Plasma and Hyprland modules turn on for you.
+- **The tray icon on GNOME** needs the AppIndicator extension: add `pkgs.gnomeExtensions.appindicator` and turn it on in Extensions. Without it, launch Coucou again to open its window.
+- **WhatsApp.** *Install WhatsApp* downloads GOWA's build for generic Linux. If it doesn't start (the dot stays grey and `~/.local/share/coucou/coucou.log` says `GOWA could not start`), add `programs.nix-ld.enable = true;` so programs built for other distributions can run.
 
 ### Build from source
 
@@ -312,6 +378,8 @@ npm install
 npm run pack                # AppImage, .deb and .rpm land in windows/release/
 ```
 
+On NixOS, `nix develop` gives you all of this: then `cd windows && npm ci && npm run tauri dev`.
+
 **Android** — requirements: JDK 17 and the Android SDK (platform 35).
 
 ```bash
@@ -329,7 +397,7 @@ On the Mac, open Coucou from the Dock or the menu bar: its window has every sett
 | **Claude Code hooks** | live sessions and approvals | **Install hooks** — Coucou backs up `~/.claude/settings.json`, merges its hooks and shows you the diff before writing anything |
 | **Claude plan** *(macOS, GitHub build)* | Plan usage gauge in the notch header | **Install relay** in Settings → Agents → Plan usage, then enable "Show in the notch" |
 | **Gemini CLI hooks** | Gemini CLI sessions in the island | **Install hooks** in Settings → Gemini CLI — backs up `~/.gemini/settings.json` |
-| **Antigravity (agy) hooks** | agy sessions in the island | **Install hooks** in Settings → Antigravity — backs up `~/.gemini/config/hooks.json` |
+| **Antigravity (agy) hooks** | agy sessions in the island, and *(macOS, optional)* its commands approved from the notch | **Install hooks** in Settings → Antigravity — backs up `~/.gemini/config/hooks.json`; then turn on **Approve commands from the notch** |
 | **Anthropic API key** | chat and questions about files | Settings → Anthropic API · Keychain / Windows Credential Manager / Secret Service |
 | **Google AI API key** *(macOS)* | chat with Google AI (Gemini) | Settings → Chat — other providers · Keychain |
 | **OpenAI API key** *(macOS)* | chat with OpenAI | Settings → Chat — other providers · Keychain |

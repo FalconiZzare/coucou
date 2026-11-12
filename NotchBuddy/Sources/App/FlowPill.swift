@@ -26,6 +26,9 @@ struct FlowAnnouncement: Equatable, Identifiable {
     var text: String
     /// The button's title, if there is something to do.
     var action: String?
+    /// The words of a dictation that found nowhere to go: the bubble grows to show them (three
+    /// lines at most), with the button at its bottom right.
+    var quote: String? = nil
 }
 
 /// What the pill shows.
@@ -232,6 +235,7 @@ struct FlowPillView: View {
             FlowAnnouncementView(announcement: announcement, edge: model.edge,
                                  act: { model.announcementAction?() },
                                  dismiss: { model.dismissAnnouncement?() })
+                .id(announcement.id)
                 .transition(.scale(scale: 0.6, anchor: bubbleAnchor).combined(with: .opacity))
         } else if vertical, let text = model.tooltip ?? messageText {
             // On the sides, a black card level with the button under the pointer, pointing at it.
@@ -866,7 +870,9 @@ private struct FlowAnnouncementView: View {
     let dismiss: () -> Void
 
     var body: some View {
-        if edge == .bottom {
+        if let quote = announcement.quote {
+            FlowQuoteCard(announcement: announcement, quote: quote, act: act, dismiss: dismiss)
+        } else if edge == .bottom {
             row
                 .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.95)))
                 .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
@@ -916,6 +922,85 @@ private struct FlowAnnouncementView: View {
     }
 }
 
+/// A dictation with nowhere to paste: the bubble grows with the words (three lines at most, then
+/// "…"), and Copy at its bottom right puts them on the clipboard to paste them yourself.
+private struct FlowQuoteCard: View {
+    let announcement: FlowAnnouncement
+    let quote: String
+    let act: () -> Void
+    let dismiss: () -> Void
+    @State private var copied = false
+
+    /// As wide as the words on one line, from 260 to 400 points: a short sentence gets a small card.
+    static func width(for quote: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 13.5, weight: .medium)
+        let one = (quote as NSString).size(withAttributes: [.font: font]).width
+        return min(400, max(260, ceil(one) + 32))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                Image(systemName: announcement.symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color(hex: announcement.tint))
+                Text(announcement.text)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Color.white.opacity(0.6))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                Button(action: dismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(Color.white.opacity(0.6))
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(String(localized: "flow.ann.dismiss"))
+            }
+            Text(quote)
+                .font(.system(size: 13.5, weight: .medium))
+                .foregroundColor(.white)
+                .lineLimit(3)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack {
+                Spacer(minLength: 0)
+                Button {
+                    guard !copied else { return }
+                    copied = true
+                    act()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(copied ? String(localized: "notes.copied") : (announcement.action ?? String(localized: "hub.copy")))
+                            .font(.system(size: 12.5, weight: .bold))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 13)
+                    .frame(height: 28)
+                    .background(Capsule().fill(copied ? Color(hex: "#86EFAC") : Color(hex: "#F5F1EA")))
+                    .animation(.easeOut(duration: 0.15), value: copied)
+                }
+                .buttonStyle(.plain)
+                .fixedSize()
+            }
+        }
+        .padding(.leading, 16)
+        .padding(.trailing, 10)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+        .frame(width: Self.width(for: quote))
+        .background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(Color.black.opacity(0.95)))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Color.white.opacity(0.14)))
+        .shadow(color: .black.opacity(0.4), radius: 14, y: 6)
+        .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
 /// The pill's Mochi: a mini Mochi (BotEngine, like the pills of the compact island), white, idle,
 /// so his eyes wander around. Drawn only while the pill is open.
 private struct FlowMochiView: View {
@@ -954,7 +1039,7 @@ private struct FlowMochiView: View {
 final class FlowPillController {
     /// The panel: wide along the bottom (bubbles above the pill), tall on the sides (bubbles beside it).
     static func size(for edge: FlowPillEdge) -> NSSize {
-        edge == .bottom ? NSSize(width: 520, height: 170) : NSSize(width: 560, height: 440)
+        edge == .bottom ? NSSize(width: 520, height: 230) : NSSize(width: 560, height: 440)
     }
 
     private var size: NSSize { Self.size(for: model.edge) }
@@ -1050,12 +1135,20 @@ final class FlowPillController {
 
     /// A message above the pill, with a button to act; it goes away by itself after a while,
     /// unless the pointer is on it.
-    func announce(_ announcement: FlowAnnouncement, for seconds: TimeInterval = 8,
+    /// `closesAfter`: once its button is clicked, the bubble stays that long (to show "Copied").
+    func announce(_ announcement: FlowAnnouncement, for seconds: TimeInterval = 8, closesAfter: TimeInterval = 0,
                   perform: (@MainActor () -> Void)? = nil) {
         model.tooltip = nil
         model.announcementAction = { [weak self] in
             perform?()
-            self?.dismissAnnouncement()
+            guard closesAfter > 0 else { self?.dismissAnnouncement(); return }
+            let shown = announcement.id
+            self?.announceTask?.cancel()
+            self?.announceTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(closesAfter))
+                guard !Task.isCancelled, self?.model.announcement?.id == shown else { return }
+                self?.dismissAnnouncement()
+            }
         }
         model.announcement = announcement
         updateVisibility()
@@ -1110,7 +1203,9 @@ final class FlowPillController {
             let length: CGFloat = open ? 200 : 96
             let thickness: CGFloat = open ? 46 : 26
             var rects = [NSRect(x: frame.midX - length / 2, y: frame.minY, width: length, height: thickness)]
-            if model.announcement != nil {
+            if model.announcement?.quote != nil {
+                rects.append(NSRect(x: frame.midX - 220, y: frame.minY + 40, width: 440, height: 170))
+            } else if model.announcement != nil {
                 rects.append(NSRect(x: frame.midX - 240, y: frame.minY + 40, width: 480, height: 110))
             } else if bubble {
                 rects.append(NSRect(x: frame.midX - 140, y: frame.minY + 40, width: 280, height: 40))
@@ -1130,7 +1225,7 @@ final class FlowPillController {
                 let card = model.announcement == nil
                 let inset: CGFloat = card ? FlowPillView.sideOpenDepth : 14
                 let width: CGFloat = card ? 300 : frame.width - inset
-                let height: CGFloat = card ? 52 : 150
+                let height: CGFloat = card ? 52 : (model.announcement?.quote != nil ? 200 : 150)
                 let shift = card && model.tooltip != nil
                     ? model.tipCell.map {
                         FlowPillView.sideCellOffset($0, cells: FlowPillView.sideCells(FlowPillView.look(for: model)))
