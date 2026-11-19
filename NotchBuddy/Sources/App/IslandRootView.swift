@@ -688,6 +688,7 @@ struct IslandHeader: View {
     @State private var gearHovered  = false
     @State private var soundHovered = false
     @State private var closeHovered = false
+    @State private var caffeineHovered = false
 
     /// Pending approval or mail draft: the island refuses to fold (fsm.isHeldOpen), so the
     /// close cross is not shown.
@@ -727,6 +728,19 @@ struct IslandHeader: View {
                 }
                 #endif
                 HStack(spacing: 14) {
+                    // Caffeine: keeps the Mac awake while on, the cup turns yellow.
+                    Button(action: { state.caffeineOn.toggle() }) {
+                        Image(systemName: state.caffeineOn ? "cup.and.heat.waves.fill" : "cup.and.heat.waves")
+                            .font(.system(size: 14))
+                            .foregroundColor(state.caffeineOn
+                                             ? Color(hex: "#FACC15").lighter(by: caffeineHovered ? 0.3 : 0)
+                                             : (caffeineHovered ? Color(hex: "#F5F6F8") : Color(hex: "#8E939C")))
+                    }
+                    .buttonStyle(.plain)
+                    .help(state.caffeineOn ? String(localized: "Keeping the Mac awake. Click to let it sleep.")
+                                           : String(localized: "Keep the Mac awake"))
+                    .onHover { caffeineHovered = $0 }
+
                     Button(action: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             state.view = .settings

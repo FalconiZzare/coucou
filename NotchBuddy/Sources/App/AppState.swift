@@ -63,6 +63,14 @@ final class AppState: ObservableObject {
         didSet { UserDefaults.standard.set(soundEnabled, forKey: "soundEnabled") }
     }
 
+    // Caffeine (header cup): keeps the Mac awake while on. Not saved, every launch starts off.
+    @Published var caffeineOn: Bool = false {
+        didSet {
+            guard caffeineOn != oldValue else { return }
+            if !Caffeine.set(caffeineOn) { caffeineOn = false }
+        }
+    }
+
     // Weekly recap — persisted
     @Published var recapEnabled: Bool = (UserDefaults.standard.object(forKey: "recapEnabled") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(recapEnabled, forKey: "recapEnabled") }
